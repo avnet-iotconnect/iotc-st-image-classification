@@ -1,0 +1,8 @@
+__pycache__
+.vscode
+pyrightconfig.json
+.DS_Store
+dist
+.venv
+validation-images/*
+!validation-images/README.md
