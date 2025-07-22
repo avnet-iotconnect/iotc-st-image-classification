@@ -1,0 +1,6 @@
+tensorflow==2.18.1
+pillow
+silence-tensorflow
+h5py
+tf-keras
+numpy
