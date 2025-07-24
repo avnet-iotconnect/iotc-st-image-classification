@@ -171,20 +171,10 @@ if __name__ == '__main__':
     # SageMaker-provided arguments
     parser.add_argument('--model_dir', type=str, default=os.environ.get('SM_MODEL_DIR') if os.environ.get('SM_MODEL_DIR') is not None else '../models')
     parser.add_argument('--train_data_dir', type=str, default=os.environ.get('SM_CHANNEL_TRAINING') if os.environ.get('SM_CHANNEL_TRAINING') is not None else '../data')
-    # You might add a separate channel for validation data if not in the same tarball:
-    # parser.add_argument('--validation_data_dir', type=str, default=os.environ.get('SM_CHANNEL_VALIDATION'))
-
-    # Your custom hyperparameters
-    parser.add_argument('--learning_rate', type=float, default=0.00001)
-    parser.add_argument('--epochs', type=int, default=30)
-
-    parser.add_argument('--run_mp2', type=bool, default=False)
-    parser.add_argument('--demo', type=bool, default=False)
-
-
+    parser.add_argument('--tf_model_file_name', type=str, default=None)
+    parser.add_argument('--per_channel', type=bool, default=True)
     args, _ = parser.parse_known_args()
 
-    print(f"Starting training job with hyperparameters: {args.learning_rate}, {args.epochs}")
     print(f"Data will be read from: {args.train_data_dir}")
     print(f"Model will be saved to: {args.model_dir}")
 

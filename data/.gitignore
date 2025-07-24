@@ -1,5 +1,4 @@
 *
 !.gitignore
-!compress.sh
-!images.tgz
 !generate-representative-dataset.py
+!requirements.txt
