@@ -1,169 +1,117 @@
-import argparse
 import os
-import sys
+# You may want to uncomment this when using TFHub
+os.environ["TF_USE_LEGACY_KERAS"] = "1"
+
+import argparse
+
+import random
 
 import numpy as np
 import tensorflow as tf
-import keras.models
 from PIL import Image
 
-import functions
 
-def mobilenetv2_validation_images(images_base, names, skip=0, max_images=100):
-    val_imgs = []
-    for name in names:
-        start_directory = images_base + '/' + functions.to_synset_id(functions.normalized_name(name))
-        count = max_images
-        skip_count = skip
-        got_one = False
-        for root, dirs, files in os.walk(start_directory):
-            for file in files:
-                if skip_count > 0:
-                    skip_count -= 1
-                else:
-                    if count == 0: break
-                    count -= 1
-                    got_one = True
-                    val_imgs.append((root + '/' + file, name))
-        if not got_one:
-            raise RuntimeError(f"Got empty set from {start_directory}")
+MODEL_INPUT_SIZE = (224, 224)
 
-    return val_imgs
 
-def run_mp2(args):
-    custom_test_data = mobilenetv2_validation_images(args.train_data_dir + '/custom-data/test', ['yorkshire_terrier'],  max_images=100)
-    extra_test_data = mobilenetv2_validation_images(
-        args.train_data_dir + '/imagenet-val',
-        ['yorkshire_terrier', 'norfolk_terrier', 'silky_terrier', 'australian_terrier'],
-        skip=30,
-        max_images=10
-    )
-    try:
-        with open(args.model_dir + '/mobilenet_v2_1.0_224_int8_per_tensor.tflite', 'rb') as f:
-            tflite_model_st = f.read()
-        print(f"\n=== ST's Model (inference_tflite) ===")
-        functions.inference_tflite(tflite_model_st, extra_test_data + custom_test_data, skip_names='mux')
-        print(f"\n=== ST's Model (stai_inference) ===")
-        functions.stai_inference(args.model_dir + '/mobilenet_v2_1.0_224_int8_per_tensor.tflite', extra_test_data + custom_test_data, skip_names='mux')
-    except Exception:
-        pass
+def convert_to_tflite_mpx(model, calibration_data_path, per_tensor=True):
+    def representative_dataset_gen():
+        with np.load(calibration_data_path) as data:
+            images = data[list(data.keys())[0]] # out key is usually "calibration_images"
+            for i in range(len(images)):
+                yield [images[i:i+1]]
 
-    functions.stai_inference(args.model_dir + '/custom-mux-pc-u8f32.tflite', extra_test_data + custom_test_data, skip_names = 'mux')
-    functions.stai_inference(args.model_dir + '/custom-mux-pc-u8f32.nb', extra_test_data + custom_test_data, skip_names = 'mux')
-    functions.stai_inference(args.model_dir + '/custom-mux-st-pc-u8f32.nb', extra_test_data + custom_test_data, skip_names = 'mux')
-    functions.stai_inference(args.model_dir + '/custom-mux-pt.tflite', extra_test_data + custom_test_data, skip_names='mux')
-    functions.stai_inference(args.model_dir + '/custom-mux-pt.nb', extra_test_data + custom_test_data, skip_names='mux')
-    functions.stai_inference(args.model_dir + '/custom-mux-st-pt-u8f32.nb', extra_test_data + custom_test_data, skip_names = 'mux')
+    converter = tf.lite.TFLiteConverter.from_keras_model(model)
+    converter.optimizations = [tf.lite.Optimize.DEFAULT]
+    converter.target_spec.supported_ops = [tf.lite.OpsSet.TFLITE_BUILTINS_INT8]
+    # converter.target_spec.supported_ops = [
+    #     tf.lite.OpsSet.TFLITE_BUILTINS,  # keep this first
+    #     tf.lite.OpsSet.SELECT_TF_OPS  # let TF kernels run the rest
+    # ]
+    converter.inference_input_type = tf.uint8
+    converter.inference_output_type = tf.float32
 
-def process_tflite_model(args, input_model, tflite_file_path, calibration_data='default', type='cpu:int8-int8'):
-    if calibration_data == 'default':
-        calibration_data = args.train_data_dir + '/calibration.npz'
+    converter.representative_dataset = representative_dataset_gen
 
-    if args.demo and os.path.isfile(tflite_file_path):
-        with open(tflite_file_path, 'rb') as f:
-            tflite_model = f.read()
+    converter._experimental_disable_per_channel = per_tensor # if per_tensor, then disable
+
+    if per_tensor:
+        x=1
+        # Optional: Explicitly allow asymmetric activations (default behavior)
+        # converter.experimental_new_dynamic_range_quantizer = False  # <== restores pre-2.18 numerics
+        # converter._experimental_full_integer_quantization = True
+        # converter.use_symmetric_quantization = False  # Not strictly needed (asymmetric is default)
+        # converter.use_weights_symmetric_quantization = False  # Allow weight zero-point != 0
+
+    return converter.convert()
+
+def quantize(args):
+    if args.input_model is None:
+
+        def qat():
+            import tensorflow_model_optimization as tfmot
+            # 1. build a plain Keras model (logits only)
+            inputs = tf.keras.layers.Input(shape=(224, 224, 3))
+            logits = hub.KerasLayer(
+                "https://tfhub.dev/google/imagenet/mobilenet_v2_100_224/classification/4",
+                trainable=True)(inputs)
+            model = tf.keras.Model(inputs, logits)
+
+            # 2. one-line QAT wrapper
+            q_aware_model = tfmot.quantization.keras.quantize_model(model)
+
+            # 3. fine-tune for **a few epochs** on ImageNet or on your own labelled data
+            q_aware_model.compile(optimizer='adam',
+                                  loss=tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True))
+
+            npz=np.load("../data/calibration.npz")
+            images = npz["representative_data"]
+            labels = npz["labels"]
+            ds = tf.data.Dataset.from_tensor_slices((images, labels)).batch(1)
+            q_aware_model.fit(ds, epochs=3)  # 3–5 epochs is usually enough
+
+            # 4. add Softmax and export per-tensor INT8
+            final = tf.keras.Sequential([q_aware_model, tf.keras.layers.Softmax()])
+            final.build((None, 224, 224, 3))
+            return final
+
+        # input_model = tf.keras.applications.MobileNetV2(
+        #     input_shape=(224, 224, 3),
+        #     alpha=1.0,
+        #     include_top=True,
+        #     weights='imagenet'
+        # )
+        import tensorflow_hub as hub
+        url="https://tfhub.dev/google/tf2-preview/mobilenet_v2/classification/4"
+        url="https://tfhub.dev/google/imagenet/mobilenet_v2_100_224/classification/4"
+        url = "https://tfhub.dev/google/imagenet/mobilenet_v2_100_224/classification/3"
+        url="https://tfhub.dev/google/tf2-preview/mobilenet_v2/classification/4"
+        input_model = tf.keras.Sequential([
+            hub.KerasLayer(url, trainable=False),
+            tf.keras.layers.Softmax()  # Make it the same as the base model - max to 1.
+        ])
+        input_model.build((None, 224, 224, 3))
+        #
+        # from qat_helper import apply_qat_one_epoch
+        #
+        # input_model = apply_qat_one_epoch(
+        #     base_url="https://tfhub.dev/google/imagenet/mobilenet_v2_100_224/classification/4",
+        #     npz_path="../data/calibration.npz"
+        # )
+
     else:
-        print("Converting to tflite...")
-        tflite_model = functions.convert_to_tflite(input_model, calibration_data, type=type)
-        print("Done.")
-        with open(tflite_file_path, 'wb') as f:
-            f.write(tflite_model)
-    return tflite_model
+        print(f"Using {args.input_model}")
+        input_model = tf.keras.models.load_model(os.path.join(args.model_dir, args.input_model))
 
-def run(args):
-    is_in_sagemaker = os.environ.get('SM_CHANNEL_TRAINING') is not None
-    if is_in_sagemaker:
-        import tarfile # builtin
-        def extract_tarball(tarball_path, output_dir):
-            with tarfile.open(tarball_path, 'r:gz') as tar:
-                tar.extractall(path=output_dir)
-        extract_tarball(args.train_data_dir + '/images.tgz', args.train_data_dir)
+    calibration_data_file = os.path.join(args.train_data_dir, 'calibration.npz')
 
-    model = tf.keras.applications.MobileNetV2(
-        input_shape=(224, 224, 3),
-        alpha=1.0,
-        include_top=True,
-        weights='imagenet'
-    )
-
-    # 1. FREEZE EVERYTHING FIRST
-    for layer in model.layers:
-        layer.trainable = False
-
-    model.compile(optimizer=tf.keras.optimizers.Adam(learning_rate=args.learning_rate),
-                      loss=tf.keras.losses.SparseCategoricalCrossentropy(from_logits=False),
-                      metrics=['accuracy'])
-
-
-    retrained_model_h5 = args.model_dir + '/custom-mux.h5'
-    if not args.demo or not os.path.isfile(retrained_model_h5):
-        custom_train_data = mobilenetv2_validation_images(args.train_data_dir + '/custom-data/train', ['yorkshire_terrier'])
-        custom_validation_data = mobilenetv2_validation_images(args.train_data_dir + '/custom-data/validation', ['yorkshire_terrier'])
-        extra_train_data = mobilenetv2_validation_images(
-            args.train_data_dir + '/imagenet-val',
-            ['yorkshire_terrier', 'norfolk_terrier', 'silky_terrier', 'australian_terrier'],
-            skip=0,
-            max_images=10
-        )
-        extra_validation_data = mobilenetv2_validation_images(
-            args.train_data_dir + '/imagenet-val',
-            ['yorkshire_terrier', 'norfolk_terrier', 'silky_terrier', 'australian_terrier'],
-            skip=10,
-            max_images=20
-        )
-        retrained_model, history = functions.fit_mobilenetv2_old(
-            model,
-            custom_train_data + extra_train_data,  # Now NumPy arrays/tensors
-            custom_validation_data + extra_validation_data,  # Now NumPy arrays/tensors
-            learning_rate=args.learning_rate,
-            epochs=args.epochs
-        )
-        print(f"Saving to {retrained_model_h5}")
-        retrained_model.save(retrained_model_h5)
-        if is_in_sagemaker:
-            # Otherwise there's nothing in output. This breaks if ran locally
-            tf.saved_model.save(retrained_model, os.path.join(args.model_dir, "model"))
-    else:
-        retrained_model = keras.models.load_model(retrained_model_h5)
-
-    # gets rid of some warnings
-    retrained_model.compile(metrics=['accuracy'])
-
-    tflite_model = process_tflite_model(args, retrained_model, args.model_dir + '/custom-mux.tflite')
-    tflite_model_st_pt_u8f32 = process_tflite_model(args, retrained_model, args.model_dir + '/custom-mux-pt-u8f32.tflite', type='st-npu:uint8-float32')
-    tflite_model_st_pc_u8f32 = process_tflite_model(args, retrained_model, args.model_dir + '/custom-mux-pc-u8f32.tflite', type='st-npu-pc:uint8-float32')
-
-    # tflite_model_synth = process_tflite_model(args, retrained_model, args.model_dir + '/custom-mux-synth-calib.tflite')
-
-    custom_test_data = mobilenetv2_validation_images(args.train_data_dir + '/custom-data/test', ['yorkshire_terrier'],  max_images=100)
-    extra_test_data = mobilenetv2_validation_images(
-        args.train_data_dir + '/imagenet-val',
-        ['yorkshire_terrier', 'norfolk_terrier', 'silky_terrier', 'australian_terrier'],
-        skip=30,
-        max_images=10
-    )
-
-
-    print(f"\n=== Fine Tuned ===")
-    functions.inference_h5_model(retrained_model, extra_test_data + custom_test_data, skip_names='mux')
-
-    # print(f"\n=== TFLite (Synthetic Calibration) ===")
-    # functions.inference_tflite(tflite_model_synth, extra_test_data + custom_test_data, skip_names='mux')
-
-    with open(args.model_dir + '/mobilenet_v2_1.0_224_int8_per_tensor.tflite', 'rb') as f:
-        tflite_model_st_pt_210 = f.read()
-    print(f"\n=== ST's Quantized uint8/float32 Model per-tensor ===")
-    functions.inference_tflite(tflite_model_st_pt_210, extra_test_data + custom_test_data, skip_names='mux')
-
-    print(f"\n=== TFLite uint8/float32 (Per Tensor) ===")
-    functions.inference_tflite(tflite_model_st_pt_u8f32, extra_test_data + custom_test_data, skip_names='mux')
-
-    print(f"\n=== TFLite uint8/float32 (Per Channel) ===")
-    functions.inference_tflite(tflite_model_st_pc_u8f32, extra_test_data + custom_test_data, skip_names='mux')
-
-    print(f"\n=== TFLite int8/int8 (Per Channel) ===")
-    functions.inference_tflite(tflite_model, extra_test_data + custom_test_data, skip_names='mux')
-
+    out_file_path = os.path.join(args.model_dir, args.output_model)
+    print(f"Converting to {out_file_path} per_tensor={str(args.per_tensor)}")
+    tflite_model = convert_to_tflite_mpx(input_model, calibration_data_file, per_tensor=args.per_tensor)
+    print("Writing...")
+    with open(out_file_path, 'wb') as f:
+        f.write(tflite_model)
+    print("Done.")
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
@@ -171,16 +119,14 @@ if __name__ == '__main__':
     # SageMaker-provided arguments
     parser.add_argument('--model_dir', type=str, default=os.environ.get('SM_MODEL_DIR') if os.environ.get('SM_MODEL_DIR') is not None else '../models')
     parser.add_argument('--train_data_dir', type=str, default=os.environ.get('SM_CHANNEL_TRAINING') if os.environ.get('SM_CHANNEL_TRAINING') is not None else '../data')
-    parser.add_argument('--tf_model_file_name', type=str, default=None)
-    parser.add_argument('--per_channel', type=bool, default=True)
+    parser.add_argument('--input_model', type=str, default=None)
+    parser.add_argument('--output_model', type=str, default="quantized-model.tflite")
+    parser.add_argument('--per_tensor', action="store_true", default=False)
     args, _ = parser.parse_known_args()
 
     print(f"Data will be read from: {args.train_data_dir}")
     print(f"Model will be saved to: {args.model_dir}")
 
-    if not args.run_mp2:
-        run(args)
-    else:
-        run_mp2(args)
+    quantize(args)
 
     print(f"Saved models are at: {args.model_dir}")

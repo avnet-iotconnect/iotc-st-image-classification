@@ -1,7 +1,4 @@
-import os
-import sys
 import time
-import asyncio
 import gi
 
 gi.require_version('Gst', '1.0')
@@ -27,12 +24,15 @@ class StAiInference:
                 model_file,
                  label_file='/usr/local/x-linux-ai/image-classification/models/mobilenet/labels_imagenet_2012.txt',
                  ):
-        self.stai_model = stai_mpu_network(model_path=model_file, use_hw_acceleration=True)
-        self.labels = StAiInference.load_labels(label_file)
         self.output_tensor_dtype = None # Set when loaded
+        self.stai_model = None # Avoid warnings
+        self.num_classes = None # Newer models will be 1001 and load We need to handle this.load() will set it
+        self.load(model_file)
+        self.labels = StAiInference.load_labels(label_file)
 
     def load(self, model_file):
-        stai_model = self.stai_model # just to maintian "compatibility" with original copy/paste code
+        self.stai_model = stai_mpu_network(model_path=model_file, use_hw_acceleration=True)
+        stai_model = self.stai_model # just to maintain "compatibility" with original copy/paste code
         # Read input tensor information
         num_inputs = stai_model.get_num_inputs()
         input_tensor_infos = stai_model.get_input_infos()
@@ -41,10 +41,14 @@ class StAiInference:
             input_tensor_name = input_tensor_infos[i].get_name()
             input_tensor_rank = input_tensor_infos[i].get_rank()
             input_tensor_dtype = input_tensor_infos[i].get_dtype()
-            print("**Input node: {} -Input_name:{} -Input_dims:{} - input_type:{} -Input_shape:{}".format(i, input_tensor_name,
-                                                                                                          input_tensor_rank,
-                                                                                                          input_tensor_dtype,
-                                                                                                          input_tensor_shape))
+            print("**Input node: {} -Input_name:{} -Input_dims:{} - input_type:{} -Input_shape:{}"
+                .format(
+                    i,
+                    input_tensor_name,
+                    input_tensor_rank,
+                    input_tensor_dtype,
+                    input_tensor_shape)
+            )
             if input_tensor_infos[i].get_qtype() == "staticAffine":
                 # Reading the input scale and zero point variables
                 input_tensor_scale = input_tensor_infos[i].get_scale()
@@ -62,6 +66,7 @@ class StAiInference:
             output_tensor_rank = output_tensor_infos[i].get_rank()
             output_tensor_dtype = output_tensor_infos[i].get_dtype()
             self.output_tensor_dtype = output_tensor_dtype
+            self.num_classes=output_tensor_shape[1]
             print("**Output node: {} -Output_name:{} -Output_dims:{} -  Output_type:{} -Output_shape:{}".format(i, output_tensor_name,
                                                                                                                 output_tensor_rank,
                                                                                                                 output_tensor_dtype,
@@ -91,11 +96,14 @@ class StAiInference:
         output_data = self.stai_model.get_output(index=0)
         results = np.squeeze(output_data)
         top_k = results.argsort()[-3:][::-1]
+
+        # newer models will have "canvas" at class index 0 and 1001 total.
+        offset = -1 if self.num_classes == 1001 else 0
         for i in top_k:
             if self.output_tensor_dtype == np.uint8:
-                print(' {:08.6f}: {}'.format(float(results[i] / 255.0), self.labels[i]), end='')
+                print(' {:08.6f}: {}'.format(float(results[i] / 255.0), self.labels[i+offset]), end='')
             else:
-                print(' {:08.6f}: {}'.format(float(results[i]), self.labels[i]), end='')
+                print(' {:08.6f}: {}'.format(float(results[i]), self.labels[i+offset]), end='')
         print("")
 
 
@@ -107,7 +115,7 @@ class CameraPipeline:
         self.show_window = show_window
 
         # Base pipeline parts
-        src = "v4l2src device=/dev/video7 ! image/jpeg,width=640,height=480,framerate=30/1 ! jpegdec ! videoconvert"
+        src = "v4l2src device=/dev/video0 ! image/jpeg,width=640,height=480,framerate=30/1 ! jpegdec ! videoconvert"
 
         # Text overlay configuration
         text_overlay = (
@@ -171,7 +179,7 @@ class CameraPipeline:
 
 def main():
     parser = ArgumentParser()
-    parser.add_argument('-m','--model_file',help='model to be executed.')
+    parser.add_argument('-m', '--model_file', help='model to be executed.')
     args = parser.parse_args()
 
     model = StAiInference(args.model_file)

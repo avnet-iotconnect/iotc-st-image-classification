@@ -1,6 +1,8 @@
-tensorflow==2.18.1
+tensorflow==2.18.*
+tensorflow-hub==0.16.1
 pillow
 silence-tensorflow
 h5py
-tf-keras
+tf-keras==2.18.0
 numpy
+tensorflow_model_optimization
