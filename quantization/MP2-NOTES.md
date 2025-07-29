@@ -1,6 +1,8 @@
 
-```bash
-pt install stai-mpu-tflite
+```bash 
+x-linux-ai -i stai-mpu-tflite
+x-linux-ai -i stai-mpu-ort
+
 python3 -m venv --system-site-packages ~/.venv-st
 source ~/.venv-st
 sed -i '/silence-tensorflow/d' requirements.txt
@@ -17,3 +19,6 @@ v4l2-ctl -d  /dev/video7 --list-formats-ext
 v4l2-ctl -d /dev/video7 --set-fmt-video=width=640,height=480,pixelformat=MJPG
 v4l2-ctl -d /dev/video7 --stream-mmap --stream-count=1 --stream-to=output.jpg
 ```
+python -m tf2onnx.convert --opset 16 --tflite ../models/quantized-pc.tflite --output ../models/quantized-pc.onnx
+python -m tf2onnx.convert --opset 16 --tflite ../models/quantized-pc.tflite --output ../models/quantized-pc.onnx
+

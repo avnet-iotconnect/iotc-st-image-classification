@@ -22,7 +22,7 @@ class StAiInference:
 
     def __init__(self,
                 model_file,
-                 label_file='/usr/local/x-linux-ai/image-classification/models/mobilenet/labels_imagenet_2012.txt',
+                 label_file='../models/ImageNetLabels.txt',
                  ):
         self.output_tensor_dtype = None # Set when loaded
         self.stai_model = None # Avoid warnings
@@ -31,6 +31,7 @@ class StAiInference:
         self.labels = StAiInference.load_labels(label_file)
 
     def load(self, model_file):
+        # this code section is mainly copied for ST instructions
         self.stai_model = stai_mpu_network(model_path=model_file, use_hw_acceleration=True)
         stai_model = self.stai_model # just to maintain "compatibility" with original copy/paste code
         # Read input tensor information
@@ -98,12 +99,14 @@ class StAiInference:
         top_k = results.argsort()[-3:][::-1]
 
         # newer models will have "canvas" at class index 0 and 1001 total.
-        offset = -1 if self.num_classes == 1001 else 0
         for i in top_k:
+            # if "non-tfhub" model is passed with 1000 classes
+            offset = 1 if self.num_classes == 1000 else 0
+            class_name = self.labels[i + offset]
             if self.output_tensor_dtype == np.uint8:
-                print(' {:08.6f}: {}'.format(float(results[i] / 255.0), self.labels[i+offset]), end='')
+                print(' {:08.6f}: {}'.format(float(results[i] / 255.0), class_name), end='')
             else:
-                print(' {:08.6f}: {}'.format(float(results[i]), self.labels[i+offset]), end='')
+                print(' {:08.6f}: {}'.format(float(results[i]), class_name), end='')
         print("")
 
 

@@ -1,8 +1,8 @@
-tensorflow==2.18.*
-tensorflow-hub==0.16.1
+tensorflow==2.18.1
 pillow
-silence-tensorflow
 h5py
-tf-keras==2.18.0
 numpy
 tensorflow_model_optimization
+keras==3.10.0
+tensorflow-hub==0.16.1
+iotconnect-rest-api

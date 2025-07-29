@@ -62,10 +62,13 @@ if len(sys.argv) > 1 and sys.argv[1] is not None:
     source = sys.argv[1]
 
 print(f"Loading images from {source}...")
-images_np_array, classes_np_array = make_calibration_dataset(source, num_images=500, is_tfhub_model=True)
+images_np_array, classes_np_array = make_calibration_dataset(source, num_images=500, is_tfhub_model=False)
+print("Per-channel means:", [np.mean(images_np_array[..., i]) for i in range(3)])
+print("Per-channel stds:", [np.std(images_np_array[..., i]) for i in range(3)])
+print("Min:", images_np_array.min(), "Max", images_np_array.max())  # Should show ~-1.0, ~1.0
 
 print("Saving to calibration.npz...")
 np.savez_compressed("calibration.npz", representative_data=images_np_array, labels=classes_np_array)
 
-print("Saving to calibration-small.npz (100 images)...")
-np.savez_compressed("calibration-small.npz", representative_data=images_np_array[:100], labels=classes_np_array[:100])
+print("Saving to calibration-stedgeai.npz (100 images - suitable for ST Edge Ai Web interface)...")
+np.savez_compressed("calibration-stedgeai.npz", representative_data=images_np_array[:100])

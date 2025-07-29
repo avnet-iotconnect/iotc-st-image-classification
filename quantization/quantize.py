@@ -1,20 +1,51 @@
 import os
+
+import keras
+
 # You may want to uncomment this when using TFHub
 os.environ["TF_USE_LEGACY_KERAS"] = "1"
 
 import argparse
 
-import random
-
 import numpy as np
 import tensorflow as tf
-from PIL import Image
-
 
 MODEL_INPUT_SIZE = (224, 224)
 
 
+def iotc_ota_send(duid, file_path):
+    """
+    This function will send an OTA to the device with specified duid
+    If a firmware for the device is not created, it will create one with a name based on the template name.
+    """
+    import avnet.iotconnect.restapi.lib.template as template
+    from avnet.iotconnect.restapi.lib import firmware, upgrade, device, config, ota
+    from avnet.iotconnect.restapi.lib.error import InvalidActionError, ConflictResponseError
+
+    if duid is None:
+        raise ValueError('iotc_send: The "duid" argument is required')
+    device_object = device.get_by_duid(duid)
+    template_object = template.get_by_guid(device_object.deviceTemplateGuid)
+    firmware_guid = template_object.firmwareGuid
+
+    if firmware_guid is None:
+        import re
+        firmware_name = template_object.templateName.upper()
+        firmware_name = re.sub(r'[^a-zA-Z0-9\s]', '', firmware_name) # remove any non-alpha-numeric characters
+        firmware_create_result = firmware.create(template_guid=template_object.guid, name=firmware_name, hw_version="1.0", initial_sw_version=None, description="Initial version")
+        firmware_upgrade_guid = firmware_create_result.firmwareUpgradeGuid
+    else:
+        firmware_upgrade_guid = upgrade.create(firmware_guid)
+    upgrade.upload(firmware_upgrade_guid, file_path)
+    upgrade.publish(firmware_upgrade_guid)
+
 def convert_to_tflite_mpx(model, calibration_data_path, per_tensor=True):
+    def representative_dataset_synthetic():
+        print("--- WARNING: USING SYNTHETIC REPRESENTATIVE DATASET ---")
+        for _ in range(100):
+            data = np.random.rand(1, 224, 224, 3) * 2.0 - 1.0
+            yield [data.astype(np.float32)]
+
     def representative_dataset_gen():
         with np.load(calibration_data_path) as data:
             images = data[list(data.keys())[0]] # out key is usually "calibration_images"
@@ -24,10 +55,7 @@ def convert_to_tflite_mpx(model, calibration_data_path, per_tensor=True):
     converter = tf.lite.TFLiteConverter.from_keras_model(model)
     converter.optimizations = [tf.lite.Optimize.DEFAULT]
     converter.target_spec.supported_ops = [tf.lite.OpsSet.TFLITE_BUILTINS_INT8]
-    # converter.target_spec.supported_ops = [
-    #     tf.lite.OpsSet.TFLITE_BUILTINS,  # keep this first
-    #     tf.lite.OpsSet.SELECT_TF_OPS  # let TF kernels run the rest
-    # ]
+    converter.target_spec.supported_types = [tf.int8]
     converter.inference_input_type = tf.uint8
     converter.inference_output_type = tf.float32
 
@@ -36,72 +64,48 @@ def convert_to_tflite_mpx(model, calibration_data_path, per_tensor=True):
     converter._experimental_disable_per_channel = per_tensor # if per_tensor, then disable
 
     if per_tensor:
-        x=1
-        # Optional: Explicitly allow asymmetric activations (default behavior)
-        # converter.experimental_new_dynamic_range_quantizer = False  # <== restores pre-2.18 numerics
-        # converter._experimental_full_integer_quantization = True
-        # converter.use_symmetric_quantization = False  # Not strictly needed (asymmetric is default)
-        # converter.use_weights_symmetric_quantization = False  # Allow weight zero-point != 0
+        # converter._experimental_disable_per_channel_quantization_for_dense_layers = True
+        #
+        # converter.experimental_new_converter = True
+        #converter.experimental_new_quantizer = False
+        # converter.experimental_new_dynamic_range_quantizer = False
+
+        pass # to keep commended out code up there
 
     return converter.convert()
 
+
+def base_model():
+    model = keras.applications.MobileNetV2(
+        input_shape=(224, 224, 3),
+        alpha=1.0,
+        include_top=True,
+        weights='imagenet'
+    )
+    model.build((None, 224, 224, 3))
+    return model
+
 def quantize(args):
     if args.input_model is None:
+        input_model = base_model()
 
-        def qat():
-            import tensorflow_model_optimization as tfmot
-            # 1. build a plain Keras model (logits only)
-            inputs = tf.keras.layers.Input(shape=(224, 224, 3))
-            logits = hub.KerasLayer(
-                "https://tfhub.dev/google/imagenet/mobilenet_v2_100_224/classification/4",
-                trainable=True)(inputs)
-            model = tf.keras.Model(inputs, logits)
+        # input_model = qat2()
+        # import tensorflow_hub as hub
+        # url = "https://tfhub.dev/google/tf2-preview/mobilenet_v2/classification/4"
+        # url = "https://tfhub.dev/google/imagenet/mobilenet_v2_100_224/classification/4"
+        # url = "https://tfhub.dev/google/imagenet/mobilenet_v2_100_224/classification/3"
+        # url = "https://tfhub.dev/google/tf2-preview/mobilenet_v2/classification/4"
+        # url = "https://www.kaggle.com/models/google/mobilenet-v2/TensorFlow2/100-224-classification/2"
+        # input_model = tf.keras.Sequential([
+        #     hub.KerasLayer(url, trainable=False),
+        #     keras.layers.Softmax()  # Make it the same as the base model - max to 1.
+        # ])
 
-            # 2. one-line QAT wrapper
-            q_aware_model = tfmot.quantization.keras.quantize_model(model)
-
-            # 3. fine-tune for **a few epochs** on ImageNet or on your own labelled data
-            q_aware_model.compile(optimizer='adam',
-                                  loss=tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True))
-
-            npz=np.load("../data/calibration.npz")
-            images = npz["representative_data"]
-            labels = npz["labels"]
-            ds = tf.data.Dataset.from_tensor_slices((images, labels)).batch(1)
-            q_aware_model.fit(ds, epochs=3)  # 3–5 epochs is usually enough
-
-            # 4. add Softmax and export per-tensor INT8
-            final = tf.keras.Sequential([q_aware_model, tf.keras.layers.Softmax()])
-            final.build((None, 224, 224, 3))
-            return final
-
-        # input_model = tf.keras.applications.MobileNetV2(
-        #     input_shape=(224, 224, 3),
-        #     alpha=1.0,
-        #     include_top=True,
-        #     weights='imagenet'
-        # )
-        import tensorflow_hub as hub
-        url="https://tfhub.dev/google/tf2-preview/mobilenet_v2/classification/4"
-        url="https://tfhub.dev/google/imagenet/mobilenet_v2_100_224/classification/4"
-        url = "https://tfhub.dev/google/imagenet/mobilenet_v2_100_224/classification/3"
-        url="https://tfhub.dev/google/tf2-preview/mobilenet_v2/classification/4"
-        input_model = tf.keras.Sequential([
-            hub.KerasLayer(url, trainable=False),
-            tf.keras.layers.Softmax()  # Make it the same as the base model - max to 1.
-        ])
-        input_model.build((None, 224, 224, 3))
-        #
-        # from qat_helper import apply_qat_one_epoch
-        #
-        # input_model = apply_qat_one_epoch(
-        #     base_url="https://tfhub.dev/google/imagenet/mobilenet_v2_100_224/classification/4",
-        #     npz_path="../data/calibration.npz"
-        # )
+        input_model.save("../models/base_model.h5")
 
     else:
         print(f"Using {args.input_model}")
-        input_model = tf.keras.models.load_model(os.path.join(args.model_dir, args.input_model))
+        input_model = keras.models.load_model(os.path.join(args.model_dir, args.input_model))
 
     calibration_data_file = os.path.join(args.train_data_dir, 'calibration.npz')
 
@@ -119,9 +123,12 @@ if __name__ == '__main__':
     # SageMaker-provided arguments
     parser.add_argument('--model_dir', type=str, default=os.environ.get('SM_MODEL_DIR') if os.environ.get('SM_MODEL_DIR') is not None else '../models')
     parser.add_argument('--train_data_dir', type=str, default=os.environ.get('SM_CHANNEL_TRAINING') if os.environ.get('SM_CHANNEL_TRAINING') is not None else '../data')
+    parser.add_argument('--base_model', type=str, default=None)
     parser.add_argument('--input_model', type=str, default=None)
     parser.add_argument('--output_model', type=str, default="quantized-model.tflite")
     parser.add_argument('--per_tensor', action="store_true", default=False)
+    parser.add_argument('--send', type=str, default=None)
+
     args, _ = parser.parse_known_args()
 
     print(f"Data will be read from: {args.train_data_dir}")
