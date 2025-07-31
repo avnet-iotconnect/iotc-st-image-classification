@@ -1,0 +1,82 @@
+{
+    "code": "staiicdemo",
+    "name": "staiicdemo",
+    "authType": 2,
+    "attributes": [
+        {
+            "name": "sdk_version",
+            "type": "STRING",
+            "description": "Version of the SDK for troubleshooting purposes",
+            "unit": "",
+            "aggregateTypes": []
+        },
+        {
+            "name": "version",
+            "type": "STRING",
+            "description": "Application version",
+            "unit": "",
+            "aggregateTypes": []
+        },
+        {
+            "name": "random",
+            "type": "DECIMAL",
+            "description": "A generated random number",
+            "unit": "",
+            "aggregateTypes": []
+        },
+        {
+            "name": "class1",
+            "type": "STRING",
+            "description": "Detected class/label",
+            "unit": "",
+            "aggregateTypes": []
+        },
+        {
+            "name": "confidence1",
+            "type": "DECIMAL",
+            "description": "Detected class/label's confidence",
+            "unit": "Percent",
+            "aggregateTypes": []
+        },
+        {
+            "name": "class2",
+            "type": "STRING",
+            "description": "Second-best detected class/label",
+            "unit": "",
+            "aggregateTypes": []
+        },
+        {
+            "name": "confidence2",
+            "type": "DECIMAL",
+            "description": "Second-best detected class/label's confidence",
+            "unit": "Percent",
+            "aggregateTypes": []
+        },
+        {
+            "name": "fps",
+            "type": "DECIMAL",
+            "description": "Camera + Inference processing framerate",
+            "unit": "Frames per second",
+            "aggregateTypes": []
+        },
+        {
+            "name": "model_name",
+            "type": "STRING",
+            "description": "Model name",
+            "unit": "Name of the inferenced model",
+            "aggregateTypes": []
+        }
+    ],
+    "messageVersion": "2.1",
+    "msgCode": "XG4C1FO",
+    "greenGrass": "0",
+    "wireless": "0",
+    "properties": {
+        "description": null,
+        "dataFrequency": "60",
+        "fileSupport": false
+    },
+    "_meta": {
+        "version": "2.0"
+    }
+}

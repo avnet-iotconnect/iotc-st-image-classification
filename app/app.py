@@ -1,4 +1,8 @@
+import random
 import time
+from dataclasses import dataclass, asdict
+from typing import Optional
+
 import gi
 
 gi.require_version('Gst', '1.0')
@@ -11,8 +15,38 @@ from stai_mpu import stai_mpu_network
 from argparse import ArgumentParser
 import numpy as np
 
+from avnet.iotconnect.sdk.lite import Client, DeviceConfig, Callbacks
+from avnet.iotconnect.sdk.lite import __version__ as SDK_VERSION
+from avnet.iotconnect.sdk.sdklib.mqtt import C2dOta, C2dAck
+
+iotconnect_client: Optional[Client] = None
 
 Gst.init(None)
+
+APP_VERSION="1.0.0"
+@dataclass
+class StaiImageClassificationTelemetry:
+    sdk_version: str
+    version: str # APP_VERSION
+    model_name: str # Name of the running model
+    fps: int # Processing frames per second
+    class1: str # Best class/label detected
+    confidence1: float  # Best class/label confidence
+    class2: str # Second-best class/label detected
+    confidence2: float  # Second-best class/label confidence
+
+stai_ic_telemetry = StaiImageClassificationTelemetry(
+    sdk_version=SDK_VERSION,
+    version=APP_VERSION,
+    model_name="unknown",
+    fps=0,
+    class1="unknown",
+    confidence1=0,
+    class2="unknown",
+    confidence2=0
+)
+
+
 
 class StAiInference:
     @staticmethod
@@ -99,14 +133,18 @@ class StAiInference:
         top_k = results.argsort()[-3:][::-1]
 
         # newer models will have "canvas" at class index 0 and 1001 total.
+        offset = 1 if self.num_classes == 1000 else 0
         for i in top_k:
             # if "non-tfhub" model is passed with 1000 classes
-            offset = 1 if self.num_classes == 1000 else 0
             class_name = self.labels[i + offset]
             if self.output_tensor_dtype == np.uint8:
-                print(' {:08.6f}: {}'.format(float(results[i] / 255.0), class_name), end='')
+                print('# {:08.6f}: {}'.format(float(results[i] / 255.0), class_name), end='')
             else:
-                print(' {:08.6f}: {}'.format(float(results[i]), class_name), end='')
+                print('# {:08.6f}: {}'.format(float(results[i]), class_name), end='')
+        stai_ic_telemetry.class1 = self.labels[top_k[0] + offset]
+        stai_ic_telemetry.class2 = self.labels[top_k[1] + offset]
+        stai_ic_telemetry.confidence1 = round(results[top_k[0]] * 100, 2)
+        stai_ic_telemetry.confidence2 = round(results[top_k[1]] * 100, 2)
         print("")
 
 
@@ -174,20 +212,76 @@ class CameraPipeline:
             if self.show_window:
                 self.overlay.set_property("text", f"Camera Stream\nFPS: {fps}")
             print(f"FPS: {fps}")
+            stai_ic_telemetry.fps = fps
             self.frame_count = 0
             self.last_time = now
 
         return Gst.FlowReturn.OK
 
 
+def on_ota(msg: C2dOta):
+    # We just print the URL. The actual handling of the OTA request would be project specific.
+    # See the ota-handling.py for more details.
+    print("Received OTA request. File: %s Version: %s URL: %s" % (msg.urls[0].file_name, msg.version, msg.urls[0].url))
+    # OTA messages always have ack_id, so it is safe to not check for it before sending the ack
+    iotconnect_client.send_ota_ack(msg, C2dAck.OTA_DOWNLOAD_FAILED, "Not implemented")
+
+def on_disconnect(reason: str, disconnected_from_server: bool):
+    print("Disconnected%s. Reason: %s" % (" from server" if disconnected_from_server else "", reason))
+
+
+def send_telemetry():
+    # Send simple data using a basic dictionary
+    if iotconnect_client is not None:
+        iotconnect_client.send_telemetry(asdict(stai_ic_telemetry))
+
+
+def iotconnect_client_init():
+    global iotconnect_client
+    device_config = DeviceConfig.from_iotc_device_config_json_file(
+        device_config_json_path="iotcDeviceConfig.json",
+        device_cert_path="device-cert.pem",
+        device_pkey_path="device-pkey.pem"
+    )
+
+    iotconnect_client = Client(
+        config=device_config,
+        callbacks=Callbacks(
+            command_cb=None,
+            ota_cb=on_ota,
+            disconnected_cb=on_disconnect
+        )
+    )
+
+def iotconnect_application_loop():
+    if iotconnect_client is not None:
+        if not iotconnect_client.is_connected():
+            print('(re)connecting...')
+            iotconnect_client.connect()
+    if iotconnect_client.is_connected():
+        send_telemetry()
+    return True
+
+
 def main():
     parser = ArgumentParser()
-    parser.add_argument('-m', '--model_file', help='model to be executed.')
+    parser.add_argument('-m', '--model-file', help='model to be executed.')
+    parser.add_argument('-t', '--reporting-interval', default=2, help='IoTConnect reporting interval in seconds')
     args = parser.parse_args()
 
     model = StAiInference(args.model_file)
     camera = CameraPipeline(model, show_window=True)  # Set to False to disable window
     loop = GLib.MainLoop()
+
+    try:
+        iotconnect_client_init()
+        stai_ic_telemetry.model_name =  args.model_file
+        GLib.timeout_add(args.reporting_interval * 1000, iotconnect_application_loop)
+    except Exception as ex:
+        print("Unable to initialize the IoTConnect client. Error was:", ex)
+        print("Proceeding without IoTConnect...")
+        return
+
     try:
         loop.run()
     except KeyboardInterrupt:
