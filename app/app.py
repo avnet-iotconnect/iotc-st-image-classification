@@ -1,4 +1,7 @@
+import os
 import random
+import subprocess
+import sys
 import time
 from dataclasses import dataclass, asdict
 from typing import Optional
@@ -19,11 +22,15 @@ from avnet.iotconnect.sdk.lite import Client, DeviceConfig, Callbacks
 from avnet.iotconnect.sdk.lite import __version__ as SDK_VERSION
 from avnet.iotconnect.sdk.sdklib.mqtt import C2dOta, C2dAck
 
+APP_VERSION="1.0.0"
+
+# forward declare only for now:
+stai_inference: Optional['StAiInference'] = None
 iotconnect_client: Optional[Client] = None
 
 Gst.init(None)
 
-APP_VERSION="1.0.0"
+
 @dataclass
 class StaiImageClassificationTelemetry:
     sdk_version: str
@@ -47,27 +54,52 @@ stai_ic_telemetry = StaiImageClassificationTelemetry(
 )
 
 
-
 class StAiInference:
     @staticmethod
     def load_labels(filename):
         with open(filename, 'r') as f:
             return [line.strip() for line in f.readlines()]
 
+    @staticmethod
+    def write_or_read_model_file_name(model_file):
+        """
+        If model_file is not None, it will be read from model_name_txt,
+        which would pick it up on next application restart if model_file is none.
+        IF model_file is None, it will be read from model_name_txt and returned
+        """
+        model_name_txt = 'model-name.txt'
+        if model_file is None:
+            try:
+                with open(model_name_txt, 'r') as file:
+                    model_file = file.readline().strip()
+            except Exception:
+                pass
+            if model_file is None:
+                raise ValueError(f"Unable to read model file name from {model_name_txt}")
+        else:
+            try:
+                with open(model_name_txt, 'w') as file:
+                    file.write(model_file)
+                    file.write(os.linesep) # just for cleanness
+            except Exception:
+                print(f"Unable to record model name into {model_name_txt}")
+        return model_file
+
     def __init__(self,
-                model_file,
+                model_file=None,
                  label_file='../models/ImageNetLabels.txt',
                  ):
         self.output_tensor_dtype = None # Set when loaded
-        self.stai_model = None # Avoid warnings
         self.num_classes = None # Newer models will be 1001 and load We need to handle this.load() will set it
-        self.load(model_file)
+
+        self.model_file = model_file
+        self.stai_model = self.load(StAiInference.write_or_read_model_file_name(model_file))
         self.labels = StAiInference.load_labels(label_file)
 
     def load(self, model_file):
         # this code section is mainly copied for ST instructions
-        self.stai_model = stai_mpu_network(model_path=model_file, use_hw_acceleration=True)
-        stai_model = self.stai_model # just to maintain "compatibility" with original copy/paste code
+        self.stai_model = None # if application runs while we are loading. Disable inference until we are done.
+        stai_model = stai_mpu_network(model_path=model_file, use_hw_acceleration=True)
         # Read input tensor information
         num_inputs = stai_model.get_num_inputs()
         input_tensor_infos = stai_model.get_input_infos()
@@ -122,7 +154,14 @@ class StAiInference:
 
         # stai_model.set_input(0, input_image)
 
+        self.stai_model = stai_model # when invoked externally, make sure these are updated
+        self.model_file = model_file
+        return stai_model
+
     def inference(self, input_image):
+        if self.stai_model is None:
+            print("The model is loading. Not inferencing yet...")
+            return
         input_data = np.expand_dims(input_image, axis=0)
         self.stai_model.set_input(0, input_data)
 
@@ -219,12 +258,61 @@ class CameraPipeline:
         return Gst.FlowReturn.OK
 
 
+def exit_and_restart():
+    print("Restarting the application now!")
+    print("")  # Print a blank line so it doesn't look as confusing in the output.
+    sys.stdout.flush()
+
+    if iotconnect_client.is_connected():
+        iotconnect_client.disconnect()
+        time.sleep(0.5)
+
+    # This way to restart the process seems to work reliably.
+    # It is best to drive the main application with a runner, like a system service,
+    # a cron job or custom simple driver script that keeps restarting the main application python process on exit
+
+    # We don't want to pass the arguments (including telemetry reporting interval unfortunately)
+    # so we don't load the file originally passed to arguments. We want to use the new one
+    # written in the text file with write_or_read_model_file_name()
+
+    # Now here is some heuristic and an assumption that this process will race with our exit()
+    # and win, but hopefully won't...
+    os.execv(sys.executable, [sys.executable, __file__])
+    #subprocess.Popen([sys.executable, __file__])
+    #sys.exit(0)
+
+
 def on_ota(msg: C2dOta):
-    # We just print the URL. The actual handling of the OTA request would be project specific.
-    # See the ota-handling.py for more details.
-    print("Received OTA request. File: %s Version: %s URL: %s" % (msg.urls[0].file_name, msg.version, msg.urls[0].url))
-    # OTA messages always have ack_id, so it is safe to not check for it before sending the ack
-    iotconnect_client.send_ota_ack(msg, C2dAck.OTA_DOWNLOAD_FAILED, "Not implemented")
+    import urllib.request
+    error_msg = None
+    iotconnect_client.send_ota_ack(msg, C2dAck.OTA_DOWNLOADING)
+    model_file = None
+    for url in msg.urls:
+        print("Downloading OTA file %s from %s" % (url.file_name, url.url))
+        try:
+            urllib.request.urlretrieve(url.url, url.file_name)
+            if url.file_name.endswith(".tflite") or url.file_name.endswith(".nb") or url.file_name.endswith(".onnx"):
+                model_file = url.file_name
+            else:
+                print(f"OTA only downloaded file url.file_name, but if these changes",
+                      "need to take effect, you may need to manually restart this process!"
+                      )
+
+        except Exception as e:
+            print("Encountered download error", e)
+            error_msg = "Download error for %s" % url.file_name
+
+    if error_msg is not None:
+        iotconnect_client.send_ota_ack(msg, C2dAck.OTA_FAILED, error_msg)
+        print('Encountered a download processing error "%s". Not restarting.' % error_msg)  # In hopes that someone pushes a better update
+    else:
+        if model_file:
+            print(f"Loading {model_file}...")
+            StAiInference.write_or_read_model_file_name(model_file) # load it upon next restart
+            stai_inference.load(model_file=model_file)
+
+        iotconnect_client.send_ota_ack(msg, C2dAck.OTA_DOWNLOAD_DONE)
+
 
 def on_disconnect(reason: str, disconnected_from_server: bool):
     print("Disconnected%s. Reason: %s" % (" from server" if disconnected_from_server else "", reason))
@@ -259,23 +347,24 @@ def iotconnect_application_loop():
             print('(re)connecting...')
             iotconnect_client.connect()
     if iotconnect_client.is_connected():
+        stai_ic_telemetry.model_name =  stai_inference.model_file
         send_telemetry()
     return True
 
 
 def main():
+    global stai_inference
     parser = ArgumentParser()
-    parser.add_argument('-m', '--model-file', help='model to be executed.')
+    parser.add_argument('-m', '--model-file', default=None, help='model to be executed.')
     parser.add_argument('-t', '--reporting-interval', default=2, help='IoTConnect reporting interval in seconds')
     args = parser.parse_args()
 
-    model = StAiInference(args.model_file)
-    camera = CameraPipeline(model, show_window=True)  # Set to False to disable window
+    stai_inference = StAiInference(args.model_file)
+    camera = CameraPipeline(stai_inference, show_window=True)  # Set to False to disable window
     loop = GLib.MainLoop()
 
     try:
         iotconnect_client_init()
-        stai_ic_telemetry.model_name =  args.model_file
         GLib.timeout_add(args.reporting_interval * 1000, iotconnect_application_loop)
     except Exception as ex:
         print("Unable to initialize the IoTConnect client. Error was:", ex)

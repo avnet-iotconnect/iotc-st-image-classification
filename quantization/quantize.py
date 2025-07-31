@@ -13,7 +13,7 @@ import tensorflow as tf
 MODEL_INPUT_SIZE = (224, 224)
 
 
-def iotc_ota_send(duid, file_path):
+def iotc_ota_send(args, file_path):
     """
     This function will send an OTA to the device with specified duid
     If a firmware for the device is not created, it will create one with a name based on the template name.
@@ -21,18 +21,40 @@ def iotc_ota_send(duid, file_path):
     import avnet.iotconnect.restapi.lib.template as template
     from avnet.iotconnect.restapi.lib import firmware, upgrade, device, config, ota
     from avnet.iotconnect.restapi.lib.error import InvalidActionError, ConflictResponseError
+    from avnet.iotconnect.restapi.lib import apiurl
+    from avnet.iotconnect.restapi.lib import credentials
 
+
+    if (args.iotc_env is not None or args.iotc_platform is not None or args.iotc_skey is not None
+        or args.iotc_username is not None or args.iotc_password is not None
+        ):
+        if (args.iotc_env is None or args.iotc_platform is None or args.iotc_skey is None
+                or args.iotc_username is None or args.iotc_password is None
+            ):
+            raise ValueError("All of the IoTConnect REST API authentication parameters must to be supplied.")
+        config.env = args.iotc_env
+        config.pf = args.iotc_platform
+        config.skey = args.iotc_skey
+        apiurl.configure_using_discovery()
+        credentials.authenticate(username=args.iotc_username, password=args.iotc_password)
+        print("Logged in successfully.")
+    else:
+        credentials.refresh()
+        print("Credentials refreshed successfully successfully.")
+
+    duid=args.send_to
     if duid is None:
         raise ValueError('iotc_send: The "duid" argument is required')
+    print(f"Sending {file_path} to {duid}")
     device_object = device.get_by_duid(duid)
     template_object = template.get_by_guid(device_object.deviceTemplateGuid)
     firmware_guid = template_object.firmwareGuid
 
     if firmware_guid is None:
         import re
-        firmware_name = template_object.templateName.upper()
+        firmware_name = template_object.templateName.upper()[:10] # first all letters to upper case and upt to 10 chars
         firmware_name = re.sub(r'[^a-zA-Z0-9\s]', '', firmware_name) # remove any non-alpha-numeric characters
-        firmware_create_result = firmware.create(template_guid=template_object.guid, name=firmware_name, hw_version="1.0", initial_sw_version=None, description="Initial version")
+        firmware_create_result = firmware.create(template_guid=template_object.guid, name=firmware_name, hw_version="1.0", initial_sw_version=None, description="Initial version", upgrade_description="New Model")
         firmware_upgrade_guid = firmware_create_result.firmwareUpgradeGuid
     else:
         firmware_upgrade_guid = upgrade.create(firmware_guid)
@@ -67,7 +89,7 @@ def convert_to_tflite_mpx(model, calibration_data_path, per_tensor=True):
         # converter._experimental_disable_per_channel_quantization_for_dense_layers = True
         #
         # converter.experimental_new_converter = True
-        #converter.experimental_new_quantizer = False
+        # converter.experimental_new_quantizer = False
         # converter.experimental_new_dynamic_range_quantizer = False
 
         pass # to keep commended out code up there
@@ -111,10 +133,12 @@ def quantize(args):
 
     out_file_path = os.path.join(args.model_dir, args.output_model)
     print(f"Converting to {out_file_path} per_tensor={str(args.per_tensor)}")
-    tflite_model = convert_to_tflite_mpx(input_model, calibration_data_file, per_tensor=args.per_tensor)
-    print("Writing...")
-    with open(out_file_path, 'wb') as f:
-        f.write(tflite_model)
+#    tflite_model = convert_to_tflite_mpx(input_model, calibration_data_file, per_tensor=args.per_tensor)
+#    print("Writing...")
+#    with open(out_file_path, 'wb') as f:
+#        f.write(tflite_model)
+    if args.send_to is not None:
+        iotc_ota_send(args, out_file_path)
     print("Done.")
 
 if __name__ == '__main__':
@@ -127,7 +151,18 @@ if __name__ == '__main__':
     parser.add_argument('--input_model', type=str, default=None)
     parser.add_argument('--output_model', type=str, default="quantized-model.tflite")
     parser.add_argument('--per_tensor', action="store_true", default=False)
-    parser.add_argument('--send', type=str, default=None)
+
+    parser.add_argument('--send-to', type=str, default=None)
+    parser.add_argument('--iotc-username', type=str, default=os.environ.get('IOTC_USER'),
+                        help="Your account username (email). IOTC_USER environment variable can be used instead.")
+    parser.add_argument('--iotc-password', type=str, default=os.environ.get('IOTC_PASS'),
+                        help="Your account password. IOTC_PASS environment variable can be used instead.")
+    parser.add_argument('--iotc-platform', type=str, default=os.environ.get('IOTC_PF'),
+                        help='Account platform ("aws" for AWS, or "az" for Azure). IOTC_PF environment variable can be used instead.')
+    parser.add_argument('--iotc-env', type=str, default=os.environ.get('IOTC_ENV'),
+                        help='Account environment - From settings -> Key Vault in the Web UI. IOTC_ENV environment variable can be used instead.'),
+    parser.add_argument('--iotc-skey', type=str, default=os.environ.get('IOTC_SKEY'),
+                        help="Your solution key. IOTC_SKEY environment variable can be used instead."),
 
     args, _ = parser.parse_known_args()
 
