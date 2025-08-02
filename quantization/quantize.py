@@ -52,14 +52,16 @@ def iotc_ota_send(args, file_path):
 
     if firmware_guid is None:
         import re
-        firmware_name = template_object.templateName.upper()[:10] # first all letters to upper case and upt to 10 chars
+        firmware_name = template_object.templateName.upper() # first all letters to upper case
         firmware_name = re.sub(r'[^a-zA-Z0-9\s]', '', firmware_name) # remove any non-alpha-numeric characters
+        firmware_name = firmware_name[:10] # use only up to 10 chars
         firmware_create_result = firmware.create(template_guid=template_object.guid, name=firmware_name, hw_version="1.0", initial_sw_version=None, description="Initial version", upgrade_description="New Model")
         firmware_upgrade_guid = firmware_create_result.firmwareUpgradeGuid
     else:
-        firmware_upgrade_guid = upgrade.create(firmware_guid)
+        firmware_upgrade_guid = upgrade.create(firmware_guid).newId
     upgrade.upload(firmware_upgrade_guid, file_path)
     upgrade.publish(firmware_upgrade_guid)
+    ota.push_to_device(firmware_upgrade_guid, [device_object.guid])
 
 def convert_to_tflite_mpx(model, calibration_data_path, per_tensor=True):
     def representative_dataset_synthetic():
@@ -133,10 +135,10 @@ def quantize(args):
 
     out_file_path = os.path.join(args.model_dir, args.output_model)
     print(f"Converting to {out_file_path} per_tensor={str(args.per_tensor)}")
-#    tflite_model = convert_to_tflite_mpx(input_model, calibration_data_file, per_tensor=args.per_tensor)
-#    print("Writing...")
-#    with open(out_file_path, 'wb') as f:
-#        f.write(tflite_model)
+    tflite_model = convert_to_tflite_mpx(input_model, calibration_data_file, per_tensor=args.per_tensor)
+    print("Writing...")
+    with open(out_file_path, 'wb') as f:
+        f.write(tflite_model)
     if args.send_to is not None:
         iotc_ota_send(args, out_file_path)
     print("Done.")
@@ -152,6 +154,7 @@ if __name__ == '__main__':
     parser.add_argument('--output_model', type=str, default="quantized-model.tflite")
     parser.add_argument('--per_tensor', action="store_true", default=False)
 
+    # IoTConnect OTA and user config:
     parser.add_argument('--send-to', type=str, default=None)
     parser.add_argument('--iotc-username', type=str, default=os.environ.get('IOTC_USER'),
                         help="Your account username (email). IOTC_USER environment variable can be used instead.")

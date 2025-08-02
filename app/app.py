@@ -1,7 +1,10 @@
 import os
 import random
+import shutil
 import subprocess
 import sys
+import tempfile
+import threading
 import time
 from dataclasses import dataclass, asdict
 from typing import Optional
@@ -89,6 +92,7 @@ class StAiInference:
                 model_file=None,
                  label_file='../models/ImageNetLabels.txt',
                  ):
+        self.lock = threading.Lock()
         self.output_tensor_dtype = None # Set when loaded
         self.num_classes = None # Newer models will be 1001 and load We need to handle this.load() will set it
 
@@ -97,94 +101,92 @@ class StAiInference:
         self.labels = StAiInference.load_labels(label_file)
 
     def load(self, model_file):
-        # this code section is mainly copied for ST instructions
-        self.stai_model = None # if application runs while we are loading. Disable inference until we are done.
-        stai_model = stai_mpu_network(model_path=model_file, use_hw_acceleration=True)
-        # Read input tensor information
-        num_inputs = stai_model.get_num_inputs()
-        input_tensor_infos = stai_model.get_input_infos()
-        for i in range(0, num_inputs):
-            input_tensor_shape = input_tensor_infos[i].get_shape()
-            input_tensor_name = input_tensor_infos[i].get_name()
-            input_tensor_rank = input_tensor_infos[i].get_rank()
-            input_tensor_dtype = input_tensor_infos[i].get_dtype()
-            print("**Input node: {} -Input_name:{} -Input_dims:{} - input_type:{} -Input_shape:{}"
-                .format(
-                    i,
-                    input_tensor_name,
-                    input_tensor_rank,
-                    input_tensor_dtype,
-                    input_tensor_shape)
-            )
-            if input_tensor_infos[i].get_qtype() == "staticAffine":
-                # Reading the input scale and zero point variables
-                input_tensor_scale = input_tensor_infos[i].get_scale()
-                input_tensor_zp = input_tensor_infos[i].get_zero_point()
-            if input_tensor_infos[i].get_qtype() == "dynamicFixedPoint":
-                # Reading the dynamic fixed point position
-                input_tensor_dfp_pos = input_tensor_infos[i].get_fixed_point_pos()
+        with self.lock:
+            # this code section is mainly copied for ST instructions
+            self.stai_model = None # if application runs while we are loading. Disable inference until we are done.
+            stai_model = stai_mpu_network(model_path=model_file, use_hw_acceleration=True)
+            # Read input tensor information
+            num_inputs = stai_model.get_num_inputs()
+            input_tensor_infos = stai_model.get_input_infos()
+            for i in range(0, num_inputs):
+                input_tensor_shape = input_tensor_infos[i].get_shape()
+                input_tensor_name = input_tensor_infos[i].get_name()
+                input_tensor_rank = input_tensor_infos[i].get_rank()
+                input_tensor_dtype = input_tensor_infos[i].get_dtype()
+                print("**Input node: {} -Input_name:{} -Input_dims:{} - input_type:{} -Input_shape:{}"
+                    .format(
+                        i,
+                        input_tensor_name,
+                        input_tensor_rank,
+                        input_tensor_dtype,
+                        input_tensor_shape)
+                )
+                if input_tensor_infos[i].get_qtype() == "staticAffine":
+                    # Reading the input scale and zero point variables
+                    input_tensor_scale = input_tensor_infos[i].get_scale()
+                    input_tensor_zp = input_tensor_infos[i].get_zero_point()
+                if input_tensor_infos[i].get_qtype() == "dynamicFixedPoint":
+                    # Reading the dynamic fixed point position
+                    input_tensor_dfp_pos = input_tensor_infos[i].get_fixed_point_pos()
 
-        # Read output tensor information
-        num_outputs = stai_model.get_num_outputs()
-        output_tensor_infos = stai_model.get_output_infos()
-        for i in range(0, num_outputs):
-            output_tensor_shape = output_tensor_infos[i].get_shape()
-            output_tensor_name = output_tensor_infos[i].get_name()
-            output_tensor_rank = output_tensor_infos[i].get_rank()
-            output_tensor_dtype = output_tensor_infos[i].get_dtype()
-            self.output_tensor_dtype = output_tensor_dtype
-            self.num_classes=output_tensor_shape[1]
-            print("**Output node: {} -Output_name:{} -Output_dims:{} -  Output_type:{} -Output_shape:{}".format(i, output_tensor_name,
-                                                                                                                output_tensor_rank,
-                                                                                                                output_tensor_dtype,
-                                                                                                                output_tensor_shape))
-            if output_tensor_infos[i].get_qtype() == "staticAffine":
-                # Reading the output scale and zero point variables
-                output_tensor_scale = output_tensor_infos[i].get_scale()
-                output_tensor_zp = output_tensor_infos[i].get_zero_point()
-            if output_tensor_infos[i].get_qtype() == "dynamicFixedPoint":
-                # Reading the dynamic fixed point position
-                output_tensor_dfp_pos = output_tensor_infos[i].get_fixed_point_pos()
+            # Read output tensor information
+            num_outputs = stai_model.get_num_outputs()
+            output_tensor_infos = stai_model.get_output_infos()
+            for i in range(0, num_outputs):
+                output_tensor_shape = output_tensor_infos[i].get_shape()
+                output_tensor_name = output_tensor_infos[i].get_name()
+                output_tensor_rank = output_tensor_infos[i].get_rank()
+                output_tensor_dtype = output_tensor_infos[i].get_dtype()
+                self.output_tensor_dtype = output_tensor_dtype
+                self.num_classes=output_tensor_shape[1]
+                print("**Output node: {} -Output_name:{} -Output_dims:{} -  Output_type:{} -Output_shape:{}".format(i, output_tensor_name,
+                                                                                                                    output_tensor_rank,
+                                                                                                                    output_tensor_dtype,
+                                                                                                                    output_tensor_shape))
+                if output_tensor_infos[i].get_qtype() == "staticAffine":
+                    # Reading the output scale and zero point variables
+                    output_tensor_scale = output_tensor_infos[i].get_scale()
+                    output_tensor_zp = output_tensor_infos[i].get_zero_point()
+                if output_tensor_infos[i].get_qtype() == "dynamicFixedPoint":
+                    # Reading the dynamic fixed point position
+                    output_tensor_dfp_pos = output_tensor_infos[i].get_fixed_point_pos()
 
-        # Reading input image
-        input_width = input_tensor_shape[1]
-        input_height = input_tensor_shape[2]
-        # input_image = Image.open(args.image).resize((input_width, input_height))
-        # input_data = np.expand_dims(input_image, axis=0)
+            # Reading input image
+            input_width = input_tensor_shape[1]
+            input_height = input_tensor_shape[2]
+            # input_image = Image.open(args.image).resize((input_width, input_height))
+            # input_data = np.expand_dims(input_image, axis=0)
 
-        # stai_model.set_input(0, input_image)
-
-        self.stai_model = stai_model # when invoked externally, make sure these are updated
-        self.model_file = model_file
-        return stai_model
+            # stai_model.set_input(0, input_image)
+            self.stai_model = stai_model # when invoked externally, make sure these are updated
+            self.model_file = model_file
+            return stai_model
 
     def inference(self, input_image):
-        if self.stai_model is None:
-            print("The model is loading. Not inferencing yet...")
-            return
-        input_data = np.expand_dims(input_image, axis=0)
-        self.stai_model.set_input(0, input_data)
+        with self.lock:
+            input_data = np.expand_dims(input_image, axis=0)
+            self.stai_model.set_input(0, input_data)
 
-        self.stai_model.run() # run once for warmup
+            self.stai_model.run() # run once for warmup
 
-        output_data = self.stai_model.get_output(index=0)
-        results = np.squeeze(output_data)
-        top_k = results.argsort()[-3:][::-1]
+            output_data = self.stai_model.get_output(index=0)
+            results = np.squeeze(output_data)
+            top_k = results.argsort()[-3:][::-1]
 
-        # newer models will have "canvas" at class index 0 and 1001 total.
-        offset = 1 if self.num_classes == 1000 else 0
-        for i in top_k:
-            # if "non-tfhub" model is passed with 1000 classes
-            class_name = self.labels[i + offset]
-            if self.output_tensor_dtype == np.uint8:
-                print('# {:08.6f}: {}'.format(float(results[i] / 255.0), class_name), end='')
-            else:
-                print('# {:08.6f}: {}'.format(float(results[i]), class_name), end='')
-        stai_ic_telemetry.class1 = self.labels[top_k[0] + offset]
-        stai_ic_telemetry.class2 = self.labels[top_k[1] + offset]
-        stai_ic_telemetry.confidence1 = round(results[top_k[0]] * 100, 2)
-        stai_ic_telemetry.confidence2 = round(results[top_k[1]] * 100, 2)
-        print("")
+            # newer models will have "canvas" at class index 0 and 1001 total.
+            offset = 1 if self.num_classes == 1000 else 0
+            for i in top_k:
+                # if "non-tfhub" model is passed with 1000 classes
+                class_name = self.labels[i + offset]
+                if self.output_tensor_dtype == np.uint8:
+                    print('# {:08.6f}: {}'.format(float(results[i] / 255.0), class_name), end='')
+                else:
+                    print('# {:08.6f}: {}'.format(float(results[i]), class_name), end='')
+            stai_ic_telemetry.class1 = self.labels[top_k[0] + offset]
+            stai_ic_telemetry.class2 = self.labels[top_k[1] + offset]
+            stai_ic_telemetry.confidence1 = round(results[top_k[0]] * 100, 2)
+            stai_ic_telemetry.confidence2 = round(results[top_k[1]] * 100, 2)
+            print("")
 
 
 class CameraPipeline:
@@ -249,37 +251,16 @@ class CameraPipeline:
         if elapsed >= 1.0:  # Update text every second
             fps = int(self.frame_count / elapsed)
             if self.show_window:
-                self.overlay.set_property("text", f"Camera Stream\nFPS: {fps}")
+                text = "Camera Stream"
+                if stai_ic_telemetry.class1 is not None:
+                    text = stai_ic_telemetry.class1
+                self.overlay.set_property("text", f"{text}\nFPS: {fps}")
             print(f"FPS: {fps}")
             stai_ic_telemetry.fps = fps
             self.frame_count = 0
             self.last_time = now
 
         return Gst.FlowReturn.OK
-
-
-def exit_and_restart():
-    print("Restarting the application now!")
-    print("")  # Print a blank line so it doesn't look as confusing in the output.
-    sys.stdout.flush()
-
-    if iotconnect_client.is_connected():
-        iotconnect_client.disconnect()
-        time.sleep(0.5)
-
-    # This way to restart the process seems to work reliably.
-    # It is best to drive the main application with a runner, like a system service,
-    # a cron job or custom simple driver script that keeps restarting the main application python process on exit
-
-    # We don't want to pass the arguments (including telemetry reporting interval unfortunately)
-    # so we don't load the file originally passed to arguments. We want to use the new one
-    # written in the text file with write_or_read_model_file_name()
-
-    # Now here is some heuristic and an assumption that this process will race with our exit()
-    # and win, but hopefully won't...
-    os.execv(sys.executable, [sys.executable, __file__])
-    #subprocess.Popen([sys.executable, __file__])
-    #sys.exit(0)
 
 
 def on_ota(msg: C2dOta):
@@ -290,10 +271,32 @@ def on_ota(msg: C2dOta):
     for url in msg.urls:
         print("Downloading OTA file %s from %s" % (url.file_name, url.url))
         try:
-            urllib.request.urlretrieve(url.url, url.file_name)
             if url.file_name.endswith(".tflite") or url.file_name.endswith(".nb") or url.file_name.endswith(".onnx"):
                 model_file = url.file_name
+                # This needs special care:
+                # Calling stai_mpu_network(model_path=model_file...)
+                # most likely it is not closing the opened file, so if we try to overwrite the file in-process
+                # it will trigger a bus error and a core dump
+                # We apparently cannot urlretrieve() directly to overwrite the file.
+                # We must make a copy in /tmp and overwrite the original file.
+                # NOTE: There is an assumption here...
+                #   This "detection" is primitive and will not work if the file path
+                #   becomes mangled (like path cleanup is applied to use absolute instead of relative)
+                #   or if a symlink is used and similar.
+
+                if stai_inference.model_file == model_file:
+                    print("Overwriting the original file")
+                    time.sleep(0.2)
+                    tmp = tempfile.NamedTemporaryFile(dir='/tmp', delete=False)
+                    tmp.close()
+                    urllib.request.urlretrieve(url.url, tmp.name)
+                    shutil.copy(tmp.name, url.file_name)  # atomically replaces the model file
+                    os.unlink(tmp.name)
+                else:
+                    # otherwise it should be fine to overwrite whatever the intended file directly and without copy
+                    urllib.request.urlretrieve(url.url, url.file_name)
             else:
+                urllib.request.urlretrieve(url.url, url.file_name)
                 print(f"OTA only downloaded file url.file_name, but if these changes",
                       "need to take effect, you may need to manually restart this process!"
                       )

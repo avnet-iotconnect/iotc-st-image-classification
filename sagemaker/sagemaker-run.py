@@ -30,7 +30,7 @@ role = get_sagemaker_execution_role_arn_by_pattern()
 
 estimator = TensorFlow(
     entry_point='train.py',
-    source_dir='../training', # Directory containing train.py and requirements.txt
+    source_dir='../quantization', # Directory containing train.py and requirements.txt
     role=role,
     instance_count=1,
     instance_type='ml.g4dn.xlarge', # 'ml.m5.xlarge'
