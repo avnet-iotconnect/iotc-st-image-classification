@@ -7,6 +7,8 @@ Avnet IoTConnect Image Classification for MP2, with AWS Sagemaker and OTA update
 
 The project has been tested with python 3.12.
 
+The optional OTA feature requires IoTConnect REST API, which requires Python 3.11 or newer.
+
 Create a virtual environment at the root of this repo:
 ```bash
 python3 -m venv .venv
@@ -40,3 +42,10 @@ python3 -m pip install -r requirements.txt
 python3 python3 generate-representative-dataset.py
 ```
 
+## Executing Locally
+
+```bash
+python3 -m pip install -r requirements.txt
+# has to ber manually installed due to sagemaker compatibility:
+python3 -m pip install iotconnect-rest-api
+```

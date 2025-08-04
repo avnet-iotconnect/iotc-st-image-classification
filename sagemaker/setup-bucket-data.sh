@@ -5,16 +5,6 @@ set -x
 
 cd "$(dirname "$0")"
 
-# n02094433 = yorky, n02097658 = silky, n02096294 = australian, n02094114=norfolk
-pushd ../data >/dev/null
-tar zcvf images.tgz --dereference \
-  imagenet-val/n02094433 \
-  imagenet-val/n02097658 \
-  imagenet-val/n02096294 \
-  imagenet-val/n02094114 \
-  custom-data
-popd >/dev/null #../data
-
 bucket=$(./get-default-bucket.py)
 aws s3 mb "s3://${bucket}" --region "${AWS_REGION}" >dev/null 2>/dev/null || true
 
@@ -83,7 +73,8 @@ aws iam put-role-policy \
   --policy-document "${S3_POLICY_JSON}" \
   >/dev/null
 
-aws s3 cp ../data/images.tgz "s3://${bucket}"/data/images.tgz
+aws s3 cp ../data/calibration.npz "s3://${bucket}"/quantization/data/calibration.npz
+aws s3 cp ../data/calibration-stedgeai.npz "s3://${bucket}"/quantization/data/calibration-stedgeai.npz
 
 
 

@@ -20,7 +20,6 @@ def iotc_ota_send(args, file_path):
     """
     import avnet.iotconnect.restapi.lib.template as template
     from avnet.iotconnect.restapi.lib import firmware, upgrade, device, config, ota
-    from avnet.iotconnect.restapi.lib.error import InvalidActionError, ConflictResponseError
     from avnet.iotconnect.restapi.lib import apiurl
     from avnet.iotconnect.restapi.lib import credentials
 
@@ -125,7 +124,7 @@ def quantize(args):
         #     keras.layers.Softmax()  # Make it the same as the base model - max to 1.
         # ])
 
-        input_model.save("../models/base_model.h5")
+        input_model.save(os.path.join(args.model_dir, "base_model.h5"))
 
     else:
         print(f"Using {args.input_model}")
@@ -147,12 +146,12 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
 
     # SageMaker-provided arguments
-    parser.add_argument('--model_dir', type=str, default=os.environ.get('SM_MODEL_DIR') if os.environ.get('SM_MODEL_DIR') is not None else '../models')
-    parser.add_argument('--train_data_dir', type=str, default=os.environ.get('SM_CHANNEL_TRAINING') if os.environ.get('SM_CHANNEL_TRAINING') is not None else '../data')
-    parser.add_argument('--base_model', type=str, default=None)
-    parser.add_argument('--input_model', type=str, default=None)
-    parser.add_argument('--output_model', type=str, default="quantized-model.tflite")
-    parser.add_argument('--per_tensor', action="store_true", default=False)
+    parser.add_argument('--train-data-dir', type=str, default=os.environ.get('SM_CHANNEL_TRAINING') if os.environ.get('SM_CHANNEL_TRAINING') is not None else '../data')
+    parser.add_argument('--model-dir', type=str, default=os.environ.get('SM_MODEL_DIR') if os.environ.get('SM_MODEL_DIR') is not None else '../models')
+    parser.add_argument('--base-model', type=str, default=None)
+    parser.add_argument('--input-model', type=str, default=None)
+    parser.add_argument('--output-model', type=str, default="quantized-model.tflite")
+    parser.add_argument('--per-tensor', action="store_true", default=False)
 
     # IoTConnect OTA and user config:
     parser.add_argument('--send-to', type=str, default=None)

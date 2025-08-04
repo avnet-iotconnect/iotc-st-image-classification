@@ -1,8 +1,5 @@
 import os
-import random
 import shutil
-import subprocess
-import sys
 import tempfile
 import threading
 import time
@@ -253,7 +250,7 @@ class CameraPipeline:
             if self.show_window:
                 text = "Camera Stream"
                 if stai_ic_telemetry.class1 is not None:
-                    text = stai_ic_telemetry.class1
+                    text = f"{stai_ic_telemetry.class1} {round(stai_ic_telemetry.confidence1)}%"
                 self.overlay.set_property("text", f"{text}\nFPS: {fps}")
             print(f"FPS: {fps}")
             stai_ic_telemetry.fps = fps

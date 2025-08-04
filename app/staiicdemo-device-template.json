@@ -18,9 +18,9 @@
             "aggregateTypes": []
         },
         {
-            "name": "random",
-            "type": "DECIMAL",
-            "description": "A generated random number",
+            "name": "model_name",
+            "type": "STRING",
+            "description": "Currently running model",
             "unit": "",
             "aggregateTypes": []
         },
