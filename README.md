@@ -45,6 +45,10 @@ v4l2-ctl -d /dev/video0 --set-fmt-video=width=640,height=480,pixelformat=MJPG
 v4l2-ctl -d /dev/video0 --stream-mmap --stream-count=1 --stream-to=camera.jpg
 ```
 
+> [!WARNING]
+> If you are running without a display, the keyboard interrupt with CTRL-C will not work.
+> Use CTRL-Z and run ```kill %1``` to stop the application.
+
 ## Camera Setup
 
 It is recommended to use a USB Camera that can provide images at a good frame rate.
