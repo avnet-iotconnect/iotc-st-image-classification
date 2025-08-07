@@ -77,11 +77,7 @@ def convert_to_tflite_mpx(model, calibration_data_path, per_tensor=True):
 
     converter = tf.lite.TFLiteConverter.from_keras_model(model)
     converter.optimizations = [tf.lite.Optimize.DEFAULT]
-    converter.target_spec.supported_ops = [
-        tf.lite.OpsSet.EXPERIMENTAL_TFLITE_BUILTINS_ACTIVATIONS_INT16_WEIGHTS_INT8,
-        tf.lite.OpsSet.TFLITE_BUILTINS
-    ]
-    converter.target_spec.supported_types = [tf.int8, tf.float16]
+    converter.target_spec.supported_ops = [tf.lite.OpsSet.TFLITE_BUILTINS_INT8]
     converter.inference_input_type = tf.uint8
     converter.inference_output_type = tf.float32
 
@@ -131,7 +127,7 @@ def quantize(args):
 
     else:
         print(f"Using {args.input_model}")
-        input_model = keras.models.load_model(os.path.join(args.model_dir, args.input_model))
+        input_model = tf.keras.models.load_model(os.path.join(args.model_dir, args.input_model))
 
     calibration_data_file = os.path.join(args.train_data_dir, 'calibration.npz')
 
