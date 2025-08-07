@@ -77,8 +77,11 @@ def convert_to_tflite_mpx(model, calibration_data_path, per_tensor=True):
 
     converter = tf.lite.TFLiteConverter.from_keras_model(model)
     converter.optimizations = [tf.lite.Optimize.DEFAULT]
-    converter.target_spec.supported_ops = [tf.lite.OpsSet.TFLITE_BUILTINS_INT8]
-    converter.target_spec.supported_types = [tf.int8]
+    converter.target_spec.supported_ops = [
+        tf.lite.OpsSet.EXPERIMENTAL_TFLITE_BUILTINS_ACTIVATIONS_INT16_WEIGHTS_INT8,
+        tf.lite.OpsSet.TFLITE_BUILTINS
+    ]
+    converter.target_spec.supported_types = [tf.int8, tf.float16]
     converter.inference_input_type = tf.uint8
     converter.inference_output_type = tf.float32
 
@@ -146,15 +149,21 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
 
     # SageMaker-provided arguments
-    parser.add_argument('--train-data-dir', type=str, default=os.environ.get('SM_CHANNEL_TRAINING') if os.environ.get('SM_CHANNEL_TRAINING') is not None else '../data')
-    parser.add_argument('--model-dir', type=str, default=os.environ.get('SM_MODEL_DIR') if os.environ.get('SM_MODEL_DIR') is not None else '../models')
-    parser.add_argument('--base-model', type=str, default=None)
-    parser.add_argument('--input-model', type=str, default=None)
-    parser.add_argument('--output-model', type=str, default="quantized-model.tflite")
-    parser.add_argument('--per-tensor', action="store_true", default=False)
+    parser.add_argument('--train-data-dir', type=str, default=os.environ.get('SM_CHANNEL_TRAINING') if os.environ.get('SM_CHANNEL_TRAINING') is not None else '../data',
+                        help="Location of calibration and other data. Default: ../data'")
+    parser.add_argument('--model-dir', type=str, default=os.environ.get('SM_MODEL_DIR') if os.environ.get('SM_MODEL_DIR') is not None else '../models',
+                        help="Location where the models will be written or read. Default: '../models'")
+
+    parser.add_argument('--input-model', type=str, default=None,
+                        help="Optional model file from model-dir to load into the application. By default a model will be instantiated with Keras")
+    parser.add_argument('--output-model', type=str, default="quantized-model.tflite",
+                        help="File name to be written for the output model")
+    parser.add_argument('--per-tensor', action="store_true", default=False,
+                        help="Specify this flag to quantize a per-tensor model. Otherwise per-channel model will be created.")
 
     # IoTConnect OTA and user config:
-    parser.add_argument('--send-to', type=str, default=None)
+    parser.add_argument('--send-to', type=str, default=None,
+                        help="Optional name of your IoTConnect device to send the new model to")
     parser.add_argument('--iotc-username', type=str, default=os.environ.get('IOTC_USER'),
                         help="Your account username (email). IOTC_USER environment variable can be used instead.")
     parser.add_argument('--iotc-password', type=str, default=os.environ.get('IOTC_PASS'),

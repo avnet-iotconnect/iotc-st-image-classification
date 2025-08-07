@@ -87,7 +87,7 @@ class StAiInference:
 
     def __init__(self,
                 model_file=None,
-                 label_file='../models/ImageNetLabels.txt',
+                 label_file='ImageNetLabels.txt',
                  ):
         self.lock = threading.Lock()
         self.output_tensor_dtype = None # Set when loaded

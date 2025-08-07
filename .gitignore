@@ -7,3 +7,6 @@ dist
 .venv
 validation-images/*
 !validation-images/README.md
+
+./*-certificates.zip
+./iotcDeviceConfig.json
