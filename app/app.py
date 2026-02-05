@@ -192,15 +192,20 @@ class StAiInference:
 
 
 class CameraPipeline:
-    def __init__(self, model, device="/dev/video3", show_window=False):
+    def __init__(self, model, use_usb_camera=False, show_window=False):
         self.model = model
         self.last_time = time.perf_counter()
         self.frame_count = 0
         self.show_window = show_window
 
         # Base pipeline parts
-        src = f"v4l2src device={device} ! image/jpeg,width=640,height=480,framerate=30/1 ! jpegdec ! videoconvert"
-
+        # USB camera (e.g. /dev/video7) uses MJPG and needs jpegdec
+        # Ribbon camera (MIPI CSI, e.g. /dev/video3) outputs raw formats directly
+        if use_usb_camera:
+            src = f"v4l2src device=/dev/video7 ! image/jpeg,width=640,height=480,framerate=30/1 ! jpegdec ! videoconvert"
+        else:
+            src = f"v4l2src device=/dev/video3 ! video/x-raw,width=640,height=480,framerate=30/1 ! videoconvert"
+        print("src=", src)
         # Text overlay configuration
         text_overlay = (
             "textoverlay name=overlay "
@@ -228,7 +233,6 @@ class CameraPipeline:
         self.overlay = self.pipeline.get_by_name("overlay")
         self.pipeline.set_state(Gst.State.PLAYING)
 
-        # Add a bus to get notified about errors and warnings
         bus = self.pipeline.get_bus()
         bus.add_signal_watch()
         bus.connect("message::error", self.on_error)
@@ -380,11 +384,11 @@ def main():
     parser = ArgumentParser()
     parser.add_argument('-m', '--model-file', default=None, help='model to be executed.')
     parser.add_argument('-t', '--reporting-interval', default=2, help='IoTConnect reporting interval in seconds')
-    parser.add_argument('-d', '--device', default='/dev/video4', help='Camera device like /dev/video4')
+    parser.add_argument('-u', '--usb-cam', action='store_true', help='Use USB camera (typically MJPG) instead of ribbon camera (raw). Defaults to /dev/video7 if -d not specified.')
     args = parser.parse_args()
 
     stai_inference = StAiInference(args.model_file)
-    camera = CameraPipeline(stai_inference, device=args.device, show_window=True)  # Set to False to disable window
+    camera = CameraPipeline(stai_inference, use_usb_camera=args.usb_cam, show_window=True)  # Set to False to disable window
     loop = GLib.MainLoop()
 
     try:
