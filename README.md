@@ -313,7 +313,7 @@ tool and convert your model to .nb format like this:
 ```bash
 f=quantized-pc
 stedgeai generate -m $f.tflite --target stm32mp25
-mv stm32ai_output/$f.nb 
+mv stm32ai_output/$f.nb .
 rm -rf stm32ai_*
 scp ../models/$f.nb    root@$device_ip:models/
 ```

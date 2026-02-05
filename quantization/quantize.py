@@ -1,14 +1,12 @@
 import os
-
-import keras
+import argparse
 
 # You may want to uncomment this when using TFHub
 os.environ["TF_USE_LEGACY_KERAS"] = "1"
 
-import argparse
-
 import numpy as np
 import tensorflow as tf
+import keras
 
 MODEL_INPUT_SIZE = (224, 224)
 
@@ -98,9 +96,10 @@ def convert_to_tflite_mpx(model, calibration_data_path, per_tensor=True):
 
 
 def base_model():
-    model = keras.applications.MobileNetV2(
+    # EfficientNetV2B0 works with per-tensor quantization (unlike MobileNetV2)
+    # See experiments/RESULTS.md for investigation details
+    model = keras.applications.EfficientNetV2B0(
         input_shape=(224, 224, 3),
-        alpha=1.0,
         include_top=True,
         weights='imagenet'
     )
