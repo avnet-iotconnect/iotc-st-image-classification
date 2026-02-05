@@ -4,6 +4,7 @@
 
 import os
 import shutil
+import subprocess
 import tempfile
 import threading
 import time
@@ -191,20 +192,54 @@ class StAiInference:
             print("")
 
 
+RESOURCES_DIRECTORY = "/usr/local/x-linux-ai/resources/"
+
 class CameraPipeline:
-    def __init__(self, model, use_usb_camera=False, show_window=False):
+    @staticmethod
+    def setup_camera(width=640, height=480, framerate=30):
+        """
+        Call ST's setup_camera.sh to configure the media pipeline.
+        Returns (video_device, camera_caps, dcmipp_sensor, main_postproc) tuple.
+        """
+        config_camera = f"{RESOURCES_DIRECTORY}setup_camera.sh {width} {height} {framerate}"
+        x = subprocess.check_output(config_camera, shell=True)
+        x = x.decode("utf-8")
+        print(x)
+
+        video_device_prev = None
+        camera_caps_prev = None
+        dcmipp_sensor = None
+        main_postproc = None
+
+        for line in x.split("\n"):
+            if "V4L_DEVICE_PREV=" in line:
+                video_device_prev = line.split('V4L_DEVICE_PREV=')[1]
+            if "V4L2_CAPS_PREV=" in line:
+                camera_caps_prev = line.split('V4L2_CAPS_PREV=')[1]
+            if "DCMIPP_SENSOR=" in line:
+                dcmipp_sensor = line.split('DCMIPP_SENSOR=')[1]
+            if "MAIN_POSTPROC=" in line:
+                main_postproc = line.split('MAIN_POSTPROC=')[1]
+
+        return video_device_prev, camera_caps_prev, dcmipp_sensor, main_postproc
+
+    def __init__(self, model, use_usb_camera=False, show_window=True):
         self.model = model
         self.last_time = time.perf_counter()
         self.frame_count = 0
         self.show_window = show_window
 
-        # Base pipeline parts
-        # USB camera (e.g. /dev/video7) uses MJPG and needs jpegdec
-        # Ribbon camera (MIPI CSI, e.g. /dev/video3) outputs raw formats directly
+        # USB camera uses MJPG and needs jpegdec
+        # Ribbon camera (MIPI CSI) uses setup_camera.sh to configure media pipeline
         if use_usb_camera:
-            src = f"v4l2src device=/dev/video7 ! image/jpeg,width=640,height=480,framerate=30/1 ! jpegdec ! videoconvert"
+            src = "v4l2src device=/dev/video7 io-mode=4 ! image/jpeg,width=640,height=480,framerate=30/1 ! jpegdec ! videoconvert"
         else:
-            src = f"v4l2src device=/dev/video3 ! video/x-raw,width=640,height=480,framerate=30/1 ! videoconvert"
+            video_device, camera_caps, dcmipp_sensor, main_postproc = CameraPipeline.setup_camera()
+            device = f"/dev/{video_device}"
+            caps = f"{camera_caps}, framerate=30/1"
+            src = f"v4l2src device={device} ! {caps} ! videoconvert"
+            print(f"Using ribbon camera: device={device}, caps={caps}")
+
         print("src=", src)
         # Text overlay configuration
         text_overlay = (
@@ -384,11 +419,11 @@ def main():
     parser = ArgumentParser()
     parser.add_argument('-m', '--model-file', default=None, help='model to be executed.')
     parser.add_argument('-t', '--reporting-interval', default=2, help='IoTConnect reporting interval in seconds')
-    parser.add_argument('-u', '--usb-cam', action='store_true', help='Use USB camera (typically MJPG) instead of ribbon camera (raw). Defaults to /dev/video7 if -d not specified.')
+    parser.add_argument('-u', '--usb', action='store_true', help='Try use USB camera (typically MJPG on /dev/video7).')
     args = parser.parse_args()
 
     stai_inference = StAiInference(args.model_file)
-    camera = CameraPipeline(stai_inference, use_usb_camera=args.usb_cam, show_window=True)  # Set to False to disable window
+    camera = CameraPipeline(stai_inference, use_usb_camera=args.usb, show_window=True)  # Set to False to disable window
     loop = GLib.MainLoop()
 
     try:
