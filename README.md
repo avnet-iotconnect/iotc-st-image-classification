@@ -115,11 +115,11 @@ scp iotcDeviceConfig.json  root@$device_ip:app/
 SSH to the device and execute the installer:
 ```bash
 cd ~/app
-bash device-install.sh
+bash device-setup.sh
 ```
 
 
-The installer will create a virtual environment with necessary packages installed at ```.venv-staiicdemo``` in user's home.
+The setup script will create a virtual environment with necessary packages installed at ```.venv-staiicdemo``` in user's home.
 It will also download pre-quantized model from ST:
 * mobilenet_v2_1.0_224_int8_per_tensor.nb: Network Binary Graph (NBG) model.
 * mobilenet_v2_1.0_224_int8_per_tensor.tflite: TFLite model.

@@ -1,3 +1,7 @@
+# This example's inference approach is based on "How to run inference using the STAI MPU Python API":
+# https://wiki.st.com/stm32mpu/wiki/How_to_run_inference_using_the_STAI_MPU_Python_API
+# The GST pipeline approach is (somewhat) -based on the X-Linux-AI image classification examples.
+
 import os
 import shutil
 import tempfile
@@ -23,6 +27,7 @@ from avnet.iotconnect.sdk.lite import __version__ as SDK_VERSION
 from avnet.iotconnect.sdk.sdklib.mqtt import C2dOta, C2dAck
 
 APP_VERSION="1.0.0"
+
 
 # forward declare only for now:
 stai_inference: Optional['StAiInference'] = None
@@ -181,20 +186,20 @@ class StAiInference:
                     print('# {:08.6f}: {}'.format(float(results[i]), class_name), end='')
             stai_ic_telemetry.class1 = self.labels[top_k[0] + offset]
             stai_ic_telemetry.class2 = self.labels[top_k[1] + offset]
-            stai_ic_telemetry.confidence1 = round(results[top_k[0]] * 100, 2)
-            stai_ic_telemetry.confidence2 = round(results[top_k[1]] * 100, 2)
+            stai_ic_telemetry.confidence1 = float(round(results[top_k[0]] * 100, 2))
+            stai_ic_telemetry.confidence2 = float(round(results[top_k[1]] * 100, 2))
             print("")
 
 
 class CameraPipeline:
-    def __init__(self, model, show_window=False):
+    def __init__(self, model, device="/dev/video3", show_window=False):
         self.model = model
         self.last_time = time.perf_counter()
         self.frame_count = 0
         self.show_window = show_window
 
         # Base pipeline parts
-        src = "v4l2src device=/dev/video0 ! image/jpeg,width=640,height=480,framerate=30/1 ! jpegdec ! videoconvert"
+        src = f"v4l2src device={device} ! image/jpeg,width=640,height=480,framerate=30/1 ! jpegdec ! videoconvert"
 
         # Text overlay configuration
         text_overlay = (
@@ -222,6 +227,12 @@ class CameraPipeline:
         self.appsink.connect("new-sample", self.on_new_frame)
         self.overlay = self.pipeline.get_by_name("overlay")
         self.pipeline.set_state(Gst.State.PLAYING)
+
+        # Add a bus to get notified about errors and warnings
+        bus = self.pipeline.get_bus()
+        bus.add_signal_watch()
+        bus.connect("message::error", self.on_error)
+        bus.connect("message::warning", self.on_warning)
 
     def on_new_frame(self, sink):
         sample = sink.emit("pull-sample")
@@ -258,6 +269,18 @@ class CameraPipeline:
             self.last_time = now
 
         return Gst.FlowReturn.OK
+
+    def on_error(self, bus, msg):
+        err, debug = msg.parse_error()
+        print(f"GStreamer Error: {err}")
+        if debug:
+            print(f"Debug info: {debug}")
+
+    def on_warning(self, bus, msg):
+        warn, debug = msg.parse_warning()
+        print(f"GStreamer Warning: {warn}")
+        if debug:
+            print(f"Debug info: {debug}")
 
 
 def on_ota(msg: C2dOta):
@@ -357,10 +380,11 @@ def main():
     parser = ArgumentParser()
     parser.add_argument('-m', '--model-file', default=None, help='model to be executed.')
     parser.add_argument('-t', '--reporting-interval', default=2, help='IoTConnect reporting interval in seconds')
+    parser.add_argument('-d', '--device', default='/dev/video4', help='Camera device like /dev/video4')
     args = parser.parse_args()
 
     stai_inference = StAiInference(args.model_file)
-    camera = CameraPipeline(stai_inference, show_window=True)  # Set to False to disable window
+    camera = CameraPipeline(stai_inference, device=args.device, show_window=True)  # Set to False to disable window
     loop = GLib.MainLoop()
 
     try:
