@@ -191,9 +191,6 @@ class StAiInference:
             stai_ic_telemetry.confidence2 = float(round(results[top_k[1]] * 100, 2))
             print("")
 
-
-RESOURCES_DIRECTORY = "/usr/local/x-linux-ai/resources/"
-
 class CameraPipeline:
     @staticmethod
     def setup_camera(width=640, height=480, framerate=30):
@@ -201,7 +198,7 @@ class CameraPipeline:
         Call ST's setup_camera.sh to configure the media pipeline.
         Returns (video_device, camera_caps, dcmipp_sensor, main_postproc) tuple.
         """
-        config_camera = f"{RESOURCES_DIRECTORY}setup_camera.sh {width} {height} {framerate}"
+        config_camera = f"/usr/local/x-linux-ai/resources/setup_camera.sh {width} {height} {framerate}"
         x = subprocess.check_output(config_camera, shell=True)
         x = x.decode("utf-8")
         print(x)

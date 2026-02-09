@@ -5,6 +5,11 @@ set -e
 apt update -y
 apt install -y --upgrade python3 python3-pip python3-venv python3-wheel git cmake
 apt install -y apt-openstlinux-x-linux-ai-npu x-linux-ai-tool
+x-linux-ai --install python3-libstai-mpu
+x-linux-ai --install libstai-mpu-ovx6
+x-linux-ai --install python3-libtensorflow-lite
+x-linux-ai --install libstai-mpu-tflite6
+x-linux-ai --install application-resources
 
 wget -q -O ImageNetLabels.txt https://storage.googleapis.com/download.tensorflow.org/data/ImageNetLabels.txt
 
@@ -14,10 +19,6 @@ wget -q -O mobilenet_v2_1.0_224_int8_per_tensor.tflite https://github.com/STMicr
 python3 -m venv --system-site-packages ~/.venv-staiicdemo
 source ~/.venv-staiicdemo/bin/activate
 python3 -m pip install -r requirements.txt
-x-linux-ai --install python3-libstai-mpu
-x-linux-ai --install libstai-mpu-ovx6
-x-linux-ai --install python3-libtensorflow-lite
-x-linux-ai --install libstai-mpu-tflite6
 
 
 unzip -o *-certificates.zip

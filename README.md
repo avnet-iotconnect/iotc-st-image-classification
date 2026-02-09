@@ -326,5 +326,23 @@ python -m tf2onnx.convert --opset 16 --tflite models/quantized-pc.tflite --outpu
 
 We may address this issue in the future, but the ONNX model will run slower than TFLite or an NBG model.
 
+# Troubleshooting
+
+The application expects the camera devices to be in certain order.
+
+If the USB camera happens to be plugged in on first boot, this expectation will be invalidated,
+and we need to re-order the devices. 
+
+If the application fails to detect the camera, do the following to try reset the state:
+- Remove the USB camera.
+- Clear the udev data:
+```bash
+rm -rf /run/udev/data/*
+rm -rf /var/lib/udev/data/*
+# for immediate effect
+udevadm control --reload-rules
+udevadm trigger
+# or reboot
+```
 
 
