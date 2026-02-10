@@ -1,3 +1,8 @@
+"""
+ssh -t root@192.168.38.141 'export GST_DEBUG=2; python3 /home/root/app/test.py 2>&1 | head -100'
+(executes for several seconds)
+"""
+
 import gi
 gi.require_version('Gst', '1.0')
 from gi.repository import Gst, GLib
@@ -8,56 +13,105 @@ print("Starting test")
 
 Gst.init(None)
 
-# Setup camera
-config_camera = "/usr/local/x-linux-ai/resources/setup_camera.sh 760 568 30"
-x = subprocess.check_output(config_camera, shell=True)
-x = x.decode("utf-8")
-print(x)
-
-subprocess.run("v4l2-ctl -d /dev/v4l-subdev3 --set-fmt-video=pixelformat=RGB3,width=760,height=568", shell=True)
-
 # Hardcoded values
-main_postproc = "/dev/v4l-subdev3"
-isp_file = "/usr/local/demo/bin/dcmipp-isp-ctrl"
+nn_input_width = 224
+nn_input_height = 224
+framerate = 30
+
+def setup_camera():
+    config_camera = "/usr/local/x-linux-ai/resources/setup_camera.sh 760 568 30"
+    x = subprocess.check_output(config_camera, shell=True)
+    x = x.decode("utf-8")
+    print(x)
+    x = x.split("\n")
+    for i in x:
+        if "V4L_DEVICE_PREV" in i:
+            video_device_prev = i.lstrip('V4L_DEVICE_PREV=')
+        if "V4L2_CAPS_PREV" in i:
+            camera_caps_prev = i.lstrip('V4L2_CAPS_PREV=').replace(" ", "")
+    return video_device_prev, camera_caps_prev
+
+video_device_prev, camera_caps_prev = setup_camera()
+
+# Create pipeline
+pipeline = Gst.Pipeline()
+
+# creation of the source v4l2src
+v4lsrc1 = Gst.ElementFactory.make("v4l2src", "source")
+video_device = "/dev/" + str(video_device_prev)
+v4lsrc1.set_property("device", video_device)
+
+#creation of the v4l2src caps
+caps = str(camera_caps_prev) + ", framerate=" + str(framerate) + "/1"
+print("Camera pipeline configuration :", caps)
+camera1caps = Gst.Caps.from_string(caps)
+camerafilter1 = Gst.ElementFactory.make("capsfilter", "filter1")
+camerafilter1.set_property("caps", camera1caps)
+
+# creation of the videoconvert elements
+videoformatconverter1 = Gst.ElementFactory.make("videoconvert", "video_convert1")
+videoformatconverter2 = Gst.ElementFactory.make("videoconvert", "video_convert2")
+
+tee = Gst.ElementFactory.make("tee", "tee")
+
+# creation and configuration of the queue elements
+queue1 = Gst.ElementFactory.make("queue", "queue-1")
+queue2 = Gst.ElementFactory.make("queue", "queue-2")
+queue1.set_property("max-size-buffers", 1)
+queue1.set_property("leaky", 2)
+queue2.set_property("max-size-buffers", 1)
+queue2.set_property("leaky", 2)
+
+# creation and configuration of the appsink element
+appsink = Gst.ElementFactory.make("appsink", "appsink")
+nn_caps = "video/x-raw, format = RGB, width=" + str(nn_input_width) + ",height=" + str(nn_input_height)
+nncaps = Gst.Caps.from_string(nn_caps)
+appsink.set_property("caps", nncaps)
+appsink.set_property("emit-signals", True)
+appsink.set_property("sync", False)
+appsink.set_property("max-buffers", 1)
+appsink.set_property("drop", True)
+
+# creation of the fakesink for display
+fakesink = Gst.ElementFactory.make("fakesink")
+
+# creation of the video rate and video scale elements
+video_rate = Gst.ElementFactory.make("videorate", "video-rate")
+video_scale = Gst.ElementFactory.make("videoscale", "video-scale")
+
+# Add all elements to the pipeline
+pipeline.add(v4lsrc1)
+pipeline.add(camerafilter1)
+pipeline.add(videoformatconverter1)
+pipeline.add(videoformatconverter2)
+pipeline.add(tee)
+pipeline.add(queue1)
+pipeline.add(queue2)
+pipeline.add(appsink)
+pipeline.add(fakesink)
+pipeline.add(video_rate)
+pipeline.add(video_scale)
+
+# linking elements together
+v4lsrc1.link(video_rate)
+video_rate.link(camerafilter1)
+camerafilter1.link(tee)
+queue1.link(videoformatconverter1)
+videoformatconverter1.link(fakesink)
+queue2.link(videoformatconverter2)
+videoformatconverter2.link(video_scale)
+video_scale.link(appsink)
+tee.link(queue1)
+tee.link(queue2)
+
 cpt_frame = 0
-isp_first_config = True
 
-def update_isp_config():
-    isp_config_gamma_0 = "v4l2-ctl -d " + main_postproc + " -c gamma_correction=0"
-    isp_config_gamma_1 = "v4l2-ctl -d " + main_postproc + " -c gamma_correction=1"
-    isp_config_whiteb = isp_file + " -i0 "
-    isp_config_autoexposure = isp_file + " -g > /dev/null"
-
-    global isp_first_config
-    if isp_first_config:
-        subprocess.run(isp_config_gamma_0, shell=True)
-        subprocess.run(isp_config_gamma_1, shell=True)
-        subprocess.run(isp_config_whiteb, shell=True)
-        subprocess.run(isp_config_autoexposure, shell=True)
-        isp_first_config = False
-
-    if cpt_frame == 0:
-        subprocess.run(isp_config_whiteb, shell=True)
-        subprocess.run(isp_config_autoexposure, shell=True)
-
-# Pipeline
-src = "v4l2src device=/dev/video7 io-mode=4 ! image/jpeg,width=640,height=480,framerate=30/1 ! jpegdec ! videoconvert ! tee name=t"
-pipeline_str = f"{src} ! queue ! videoconvert ! videoscale ! video/x-raw,format=RGB,width=224,height=224 ! appsink name=sink emit-signals=True sync=true t. ! queue ! textoverlay text='Test' ! videoconvert ! fakesink"
-
-print("Creating pipeline")
-pipeline = Gst.parse_launch(pipeline_str)
-print("Pipeline created")
-
-appsink = pipeline.get_by_name("sink")
-print("Appsink found")
-
-def on_new_sample(sink):
+def new_sample(sink):
     global cpt_frame
     sample = sink.emit("pull-sample")
     if sample:
         print("Got frame", cpt_frame)
         if cpt_frame == 0:
-            update_isp_config()
             # Save the image
             buffer = sample.get_buffer()
             caps = sample.get_caps()
@@ -73,27 +127,21 @@ def on_new_sample(sink):
             GLib.idle_add(loop.quit)
     return Gst.FlowReturn.OK
 
-appsink.connect("new-sample", on_new_sample)
-print("Connected on_new_sample")
+appsink.connect("new-sample", new_sample)
 
-print("Setting pipeline to PLAYING")
+# set pipeline playing mode
 pipeline.set_state(Gst.State.PLAYING)
 
 bus = pipeline.get_bus()
 bus.add_signal_watch()
 
-def on_error(bus, msg):
-    err, debug = msg.parse_error()
-    print(f"GStreamer Error: {err}")
-    if debug:
-        print(f"Debug info: {debug}")
+def msg_error_cb(bus, message):
+    print('error message -> {}'.format(message.parse_error()))
 
-bus.connect("message::error", on_error)
-print("Connected on_error")
+bus.connect('message::error', msg_error_cb)
 
 loop = GLib.MainLoop()
 GLib.timeout_add_seconds(10, loop.quit)
-print("Starting loop")
 
 loop.run()
 

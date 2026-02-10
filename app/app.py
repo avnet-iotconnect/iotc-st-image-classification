@@ -220,7 +220,7 @@ class CameraPipeline:
         Call ST's setup_camera.sh to configure the media pipeline.
         Returns (video_device, camera_caps, dcmipp_sensor, main_postproc) tuple.
         """
-        config_camera = f"/usr/local/x-linux-ai/resources/setup_camera.sh 760 568 30"
+        config_camera = f"/usr/local/x-linux-ai/resources/setup_camera.sh 640 480 30"
         x = subprocess.check_output(config_camera, shell=True)
         x = x.decode("utf-8")
         print(x)
@@ -243,8 +243,6 @@ class CameraPipeline:
             if line.startswith("MAIN_POSTPROC="):
                 main_postproc = line.split('=', 1)[1]
 
-        if main_postproc:
-            subprocess.run(f"v4l2-ctl -d {main_postproc} -c pixelformat=RGB3", shell=True)
 
         return video_device_prev, camera_caps_prev, dcmipp_sensor, main_postproc
 
@@ -265,7 +263,7 @@ class CameraPipeline:
             self.isp_first_config = True
             self.cpt_frame = 0
             device = f"/dev/{video_device}"
-            caps = f"{camera_caps},framerate=30/1".replace("RGB16", "RGB")
+            caps = f"{camera_caps},framerate=30/1"
             src = f"v4l2src device={device} ! videorate ! {caps} ! tee name=t"
             print(f"Using ribbon camera: device={device}, caps={caps}")
 
