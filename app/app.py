@@ -220,7 +220,7 @@ class CameraPipeline:
         Call ST's setup_camera.sh to configure the media pipeline.
         Returns (video_device, camera_caps, dcmipp_sensor, main_postproc) tuple.
         """
-        config_camera = f"/usr/local/x-linux-ai/resources/setup_camera.sh {width} {height} {framerate} \"\""
+        config_camera = f"/usr/local/x-linux-ai/resources/setup_camera.sh 760 568 30"
         x = subprocess.check_output(config_camera, shell=True)
         x = x.decode("utf-8")
         print(x)
@@ -243,6 +243,9 @@ class CameraPipeline:
             if line.startswith("MAIN_POSTPROC="):
                 main_postproc = line.split('=', 1)[1]
 
+        if main_postproc:
+            subprocess.run(f"v4l2-ctl -d {main_postproc} -c pixelformat=RGB3", shell=True)
+
         return video_device_prev, camera_caps_prev, dcmipp_sensor, main_postproc
 
     def __init__(self, model, use_usb_camera=False, show_window=True):
@@ -257,9 +260,13 @@ class CameraPipeline:
             src = "v4l2src device=/dev/video7 io-mode=4 ! image/jpeg,width=640,height=480,framerate=30/1 ! jpegdec ! videoconvert"
         else:
             video_device, camera_caps, dcmipp_sensor, main_postproc = CameraPipeline.setup_camera()
+            self.dcmipp_sensor = dcmipp_sensor
+            self.main_postproc = main_postproc
+            self.isp_first_config = True
+            self.cpt_frame = 0
             device = f"/dev/{video_device}"
-            caps = f"{camera_caps},framerate=30/1"
-            src = f"v4l2src device={device} ! videorate ! {caps} ! videoconvert"
+            caps = f"{camera_caps},framerate=30/1".replace("RGB16", "RGB")
+            src = f"v4l2src device={device} ! videorate ! {caps} ! tee name=t"
             print(f"Using ribbon camera: device={device}, caps={caps}")
 
         print("src=", src)
@@ -275,19 +282,19 @@ class CameraPipeline:
         if show_window:
             # Split stream: clean frames to appsink for inference, overlay only on display branch
             self.pipeline = Gst.parse_launch(
-                f"{src} ! tee name=t ! "
-                "queue ! videoconvert ! videoscale ! video/x-raw,format=RGB,width=224,height=224 ! appsink name=sink emit-signals=True sync=true "
-                f"t. ! queue ! {text_overlay} videoconvert ! autovideosink sync=false"
+                f"{src} ! queue ! videoconvert ! videoscale ! video/x-raw,format=RGB,width=224,height=224 ! appsink name=sink emit-signals=True sync=true t. ! queue ! {text_overlay} videoconvert ! autovideosink sync=false"
             )
         else:
             # Processing only - no overlay needed
             self.pipeline = Gst.parse_launch(
-                f"{src} ! videoconvert ! videoscale ! video/x-raw,format=RGB,width=224,height=224 ! appsink name=sink emit-signals=True sync=true"
+                f"{src} ! queue ! videoconvert ! videoscale ! video/x-raw,format=RGB,width=224,height=224 ! appsink name=sink emit-signals=True sync=true"
             )
 
         self.appsink = self.pipeline.get_by_name("sink")
         self.appsink.connect("new-sample", self.on_new_frame)
         self.overlay = self.pipeline.get_by_name("overlay")
+
+
         self.pipeline.set_state(Gst.State.PLAYING)
 
         bus = self.pipeline.get_bus()
@@ -312,6 +319,15 @@ class CameraPipeline:
         # Process frame
         img = Image.frombytes("RGB", (width, height), map_info.data)
         self.model.inference(img)
+
+        if self.cpt_frame == 0:
+            self.update_isp_config()
+
+        self.cpt_frame += 1
+
+        if self.cpt_frame == 1800:
+            self.cpt_frame = 0
+
         # Update frame counter and calculate FPS
         self.frame_count += 1
         now = time.perf_counter()
@@ -353,6 +369,29 @@ class CameraPipeline:
         print(f"GStreamer Warning: {warn}")
         if debug:
             print(f"Debug info: {debug}")
+
+    def update_isp_config(self):
+        """
+        Update internal ISP configuration to make the most of the camera sensor
+        """
+        isp_file = "/usr/local/demo/bin/dcmipp-isp-ctrl"
+        isp_config_gamma_0 = "v4l2-ctl -d " + self.main_postproc + " -c gamma_correction=0"
+        isp_config_gamma_1 = "v4l2-ctl -d " + self.main_postproc + " -c gamma_correction=1"
+        isp_config_whiteb = isp_file + " -i0 "
+        isp_config_autoexposure = isp_file + " -g > /dev/null"
+
+        if self.isp_first_config:
+            subprocess.run(isp_config_gamma_0, shell=True)
+            subprocess.run(isp_config_gamma_1, shell=True)
+            subprocess.run(isp_config_whiteb, shell=True)
+            subprocess.run(isp_config_autoexposure, shell=True)
+            self.isp_first_config = False
+
+        if self.cpt_frame == 0:
+            subprocess.run(isp_config_whiteb, shell=True)
+            subprocess.run(isp_config_autoexposure, shell=True)
+
+        return True
 
 
 def print_credentials(provider: AwsCredentialsProvider):
@@ -507,7 +546,7 @@ def main():
     args = parser.parse_args()
 
     stai_inference = StAiInference(args.model_file)
-    camera = CameraPipeline(stai_inference, use_usb_camera=args.usb, show_window=False)  # Set to False to disable window
+    camera = CameraPipeline(stai_inference, use_usb_camera=args.usb, show_window=True)  # Set to False to disable window
     loop = GLib.MainLoop()
 
     try:
