@@ -9,7 +9,9 @@ x-linux-ai --install python3-libstai-mpu
 x-linux-ai --install libstai-mpu-ovx6
 x-linux-ai --install python3-libtensorflow-lite
 x-linux-ai --install libstai-mpu-tflite6
-x-linux-ai --install application-resources
+# application-resources should be all we need, but just in case install the full x-linux-ai-application
+#x-linux-ai --install application-resources
+x-linux-ai --install x-linux-ai-application
 
 wget -q -O ImageNetLabels.txt https://storage.googleapis.com/download.tensorflow.org/data/ImageNetLabels.txt
 

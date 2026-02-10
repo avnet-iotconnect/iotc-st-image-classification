@@ -3,12 +3,15 @@
 # The GST pipeline approach is (somewhat) -based on the X-Linux-AI image classification examples.
 
 import os
+import random
 import shutil
 import subprocess
+import sys
 import tempfile
 import threading
 import time
-from dataclasses import dataclass, asdict
+from dataclasses import dataclass, asdict, field
+from pathlib import Path
 from typing import Optional
 
 import gi
@@ -25,9 +28,28 @@ import numpy as np
 
 from avnet.iotconnect.sdk.lite import Client, DeviceConfig, Callbacks
 from avnet.iotconnect.sdk.lite import __version__ as SDK_VERSION
-from avnet.iotconnect.sdk.sdklib.mqtt import C2dOta, C2dAck
+from avnet.iotconnect.sdk.sdklib.mqtt import C2dOta, C2dAck, C2dCommand
+from avnet.iotconnect.sdk.lite.client import KvsClient, AwsCredentialsProvider, S3Client
 
 APP_VERSION="1.0.0"
+
+
+
+@dataclass
+class ClassificationData:
+    """ Custom metadata that can be tied to S3 uploads in IoTConnect UI """
+    classification: Optional[str] = field(default=None)
+    confidence: Optional[float]  = field(default=None)
+    model_name: Optional[str] = field(default=None)
+    fps: Optional[int] = field(default=None)
+
+@dataclass
+class S3CustomData:
+    """ Top level data structure for S3 uploads."""
+    cf: ClassificationData = field(default_factory=ClassificationData)
+
+s3_client :Optional[S3Client] = None
+s3_upload_triggered = False
 
 
 # forward declare only for now:
@@ -209,14 +231,17 @@ class CameraPipeline:
         main_postproc = None
 
         for line in x.split("\n"):
-            if "V4L_DEVICE_PREV=" in line:
-                video_device_prev = line.split('V4L_DEVICE_PREV=')[1]
-            if "V4L2_CAPS_PREV=" in line:
-                camera_caps_prev = line.split('V4L2_CAPS_PREV=')[1]
-            if "DCMIPP_SENSOR=" in line:
-                dcmipp_sensor = line.split('DCMIPP_SENSOR=')[1]
-            if "MAIN_POSTPROC=" in line:
-                main_postproc = line.split('MAIN_POSTPROC=')[1]
+            # Use startswith() to match only definition lines (not debug output)
+            # Iterate all lines so the last (final) value wins
+            if line.startswith("V4L_DEVICE_PREV="):
+                video_device_prev = line.split('=', 1)[1]
+            if line.startswith("V4L2_CAPS_PREV="):
+                # Remove spaces - GStreamer caps syntax requires no spaces after commas
+                camera_caps_prev = line.split('=', 1)[1].replace(" ", "")
+            if line.startswith("DCMIPP_SENSOR="):
+                dcmipp_sensor = line.split('=', 1)[1]
+            if line.startswith("MAIN_POSTPROC="):
+                main_postproc = line.split('=', 1)[1]
 
         return video_device_prev, camera_caps_prev, dcmipp_sensor, main_postproc
 
@@ -233,7 +258,7 @@ class CameraPipeline:
         else:
             video_device, camera_caps, dcmipp_sensor, main_postproc = CameraPipeline.setup_camera()
             device = f"/dev/{video_device}"
-            caps = f"{camera_caps}, framerate=30/1"
+            caps = f"{camera_caps},framerate=30/1"
             src = f"v4l2src device={device} ! {caps} ! videoconvert"
             print(f"Using ribbon camera: device={device}, caps={caps}")
 
@@ -271,6 +296,7 @@ class CameraPipeline:
         bus.connect("message::warning", self.on_warning)
 
     def on_new_frame(self, sink):
+        global s3_upload_triggered
         sample = sink.emit("pull-sample")
         if not sample:
             return Gst.FlowReturn.ERROR
@@ -286,7 +312,6 @@ class CameraPipeline:
         # Process frame
         img = Image.frombytes("RGB", (width, height), map_info.data).resize((224, 224))
         self.model.inference(img)
-        buffer.unmap(map_info)
         # Update frame counter and calculate FPS
         self.frame_count += 1
         now = time.perf_counter()
@@ -299,11 +324,22 @@ class CameraPipeline:
                 if stai_ic_telemetry.class1 is not None:
                     text = f"{stai_ic_telemetry.class1} {round(stai_ic_telemetry.confidence1)}%"
                 self.overlay.set_property("text", f"{text}\nFPS: {fps}")
-            print(f"FPS: {fps}")
+            if s3_upload_triggered:
+                s3_upload_triggered = False
+                print("Uploading screencap to S3...")
+                img.save("/tmp/output_image.jpg")
+                upload_screencap(
+                    label=stai_ic_telemetry.class1,
+                    confidence=stai_ic_telemetry.confidence1,
+                    fps=fps,
+                    local_path="/tmp/output_image.jpg"
+                )
             stai_ic_telemetry.fps = fps
             self.frame_count = 0
             self.last_time = now
+            print(f"FPS: {fps}")
 
+        buffer.unmap(map_info)
         return Gst.FlowReturn.OK
 
     def on_error(self, bus, msg):
@@ -318,6 +354,29 @@ class CameraPipeline:
         if debug:
             print(f"Debug info: {debug}")
 
+
+def print_credentials(provider: AwsCredentialsProvider):
+    """
+    Example function to print AWS credentials in a format suitable for setting environment variables
+    so that aws cli and similar can be used.
+    """
+    creds = provider.get_credentials()
+    # export for Linux with space so that it doesn't record in shell history when pasted
+    command = "set" if sys.platform.startswith('win') else " export"
+    print(f'{command} AWS_ACCESS_KEY_ID={creds.access_key_id}')
+    print(f'{command} AWS_SECRET_ACCESS_KEY={creds.secret_access_key}')
+    print(f'{command} AWS_SESSION_TOKEN="{creds.session_token}"')
+
+def on_command(msg: C2dCommand):
+    global iotconnect_client, s3_upload_triggered
+    print("Received command", msg.command_name, msg.command_args, msg.ack_id)
+    if msg.command_name == "capture":
+        print("Capturing image to upload to S3...")
+        s3_upload_triggered = True
+    else:
+        print("Command %s not implemented!" % msg.command_name)
+        if msg.ack_id is not None: # it could be a command without "Acknowledgement Required" flag in the device template
+            iotconnect_client.send_command_ack(msg, C2dAck.CMD_FAILED, "Not Implemented")
 
 def on_ota(msg: C2dOta):
     import urllib.request
@@ -373,8 +432,24 @@ def on_ota(msg: C2dOta):
         iotconnect_client.send_ota_ack(msg, C2dAck.OTA_DOWNLOAD_DONE)
 
 
+def upload_screencap(label: str, confidence: float, fps: int, local_path: str = Path(__file__).parent / '/tmp/capture.jpg'):
+    print("Account S3 Buckets:")
+    print(s3_client.get_buckets())
+    print("S3 Credentials:")
+    print_credentials(s3_client)
+    s3_custom_data = S3CustomData()
+    # Upload the file into the default bucket with some custom metadata
+    # The "cf" object is special and will be displayed by /IOTCONNECT UI
+    s3_custom_data.cf.classification = label
+    s3_custom_data.cf.confidence = confidence
+    s3_custom_data.cf.model_name = stai_inference.model_file
+    s3_custom_data.cf.fps = fps
+
+    iotconnect_client.s3_upload(local_path=local_path, custom_values=asdict(s3_custom_data))
+
 def on_disconnect(reason: str, disconnected_from_server: bool):
     print("Disconnected%s. Reason: %s" % (" from server" if disconnected_from_server else "", reason))
+
 
 
 def send_telemetry():
@@ -384,7 +459,7 @@ def send_telemetry():
 
 
 def iotconnect_client_init():
-    global iotconnect_client
+    global iotconnect_client, s3_client
     device_config = DeviceConfig.from_iotc_device_config_json_file(
         device_config_json_path="iotcDeviceConfig.json",
         device_cert_path="device-cert.pem",
@@ -394,11 +469,21 @@ def iotconnect_client_init():
     iotconnect_client = Client(
         config=device_config,
         callbacks=Callbacks(
-            command_cb=None,
+            command_cb=on_command,
             ota_cb=on_ota,
             disconnected_cb=on_disconnect
         )
     )
+
+    s3_client = iotconnect_client.get_s3_client()
+
+    if s3_client is None:
+        print("S3 Client is not available. Make sure you enabled File Support in your device template.")
+    else:
+        print("S3 credentials as environment variables:")
+        s3_client.obtain_credentials()
+        print_credentials(s3_client)
+
 
 def iotconnect_application_loop():
     if iotconnect_client is not None:

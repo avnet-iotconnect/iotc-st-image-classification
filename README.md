@@ -328,10 +328,10 @@ We may address this issue in the future, but the ONNX model will run slower than
 
 # Troubleshooting
 
-The application expects the camera devices to be in certain order.
-
-If the USB camera happens to be plugged in on first boot, this expectation will be invalidated,
-and we need to re-order the devices. 
+The application expects the camera devices to be in certain order. 
+If the USB camera happens to be plugged in on boot, this expectation will be invalidated,
+and we need to re-order the devices.
+In most cases, unplugging the USB camera nad powering off the device should solve the problem.
 
 If the application fails to detect the camera, do the following to try reset the state:
 - Remove the USB camera.
@@ -339,10 +339,8 @@ If the application fails to detect the camera, do the following to try reset the
 ```bash
 rm -rf /run/udev/data/*
 rm -rf /var/lib/udev/data/*
-# for immediate effect
-udevadm control --reload-rules
-udevadm trigger
-# or reboot
+poweroff
 ```
+- Remove the power and plug it back in.
 
 
