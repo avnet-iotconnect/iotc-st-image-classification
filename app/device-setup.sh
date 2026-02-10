@@ -11,7 +11,17 @@ x-linux-ai --install python3-libtensorflow-lite
 x-linux-ai --install libstai-mpu-tflite6
 # application-resources should be all we need, but just in case install the full x-linux-ai-application
 #x-linux-ai --install application-resources
-x-linux-ai --install x-linux-ai-application
+x-linux-ai --install packagegroup-x-linux-ai-demo-npu
+
+# /usr/local/x-linux-ai/resources/config_board_npu.sh
+# I think it is needed for some demos
+x-linux-ai --install config-npu
+
+# packagegroup-x-linux-ai-npu or...
+# packagegroup-x-linux-ai-npu
+# or packagegroup-x-linux-ai-tflite-npu
+packagegroup-x-linux-ai-demo-npu
+
 
 wget -q -O ImageNetLabels.txt https://storage.googleapis.com/download.tensorflow.org/data/ImageNetLabels.txt
 

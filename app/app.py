@@ -220,7 +220,7 @@ class CameraPipeline:
         Call ST's setup_camera.sh to configure the media pipeline.
         Returns (video_device, camera_caps, dcmipp_sensor, main_postproc) tuple.
         """
-        config_camera = f"/usr/local/x-linux-ai/resources/setup_camera.sh {width} {height} {framerate}"
+        config_camera = f"/usr/local/x-linux-ai/resources/setup_camera.sh {width} {height} {framerate} \"\""
         x = subprocess.check_output(config_camera, shell=True)
         x = x.decode("utf-8")
         print(x)
@@ -259,7 +259,7 @@ class CameraPipeline:
             video_device, camera_caps, dcmipp_sensor, main_postproc = CameraPipeline.setup_camera()
             device = f"/dev/{video_device}"
             caps = f"{camera_caps},framerate=30/1"
-            src = f"v4l2src device={device} ! {caps} ! videoconvert"
+            src = f"v4l2src device={device} ! videorate ! {caps} ! videoconvert"
             print(f"Using ribbon camera: device={device}, caps={caps}")
 
         print("src=", src)
@@ -276,13 +276,13 @@ class CameraPipeline:
             # Split stream: clean frames to appsink for inference, overlay only on display branch
             self.pipeline = Gst.parse_launch(
                 f"{src} ! tee name=t ! "
-                "queue ! video/x-raw,format=RGB ! appsink name=sink emit-signals=True sync=true "
+                "queue ! videoconvert ! videoscale ! video/x-raw,format=RGB,width=224,height=224 ! appsink name=sink emit-signals=True sync=true "
                 f"t. ! queue ! {text_overlay} videoconvert ! autovideosink sync=false"
             )
         else:
             # Processing only - no overlay needed
             self.pipeline = Gst.parse_launch(
-                f"{src} ! video/x-raw,format=RGB ! appsink name=sink emit-signals=True sync=true"
+                f"{src} ! videoconvert ! videoscale ! video/x-raw,format=RGB,width=224,height=224 ! appsink name=sink emit-signals=True sync=true"
             )
 
         self.appsink = self.pipeline.get_by_name("sink")
@@ -310,7 +310,7 @@ class CameraPipeline:
             return Gst.FlowReturn.ERROR
 
         # Process frame
-        img = Image.frombytes("RGB", (width, height), map_info.data).resize((224, 224))
+        img = Image.frombytes("RGB", (width, height), map_info.data)
         self.model.inference(img)
         # Update frame counter and calculate FPS
         self.frame_count += 1
@@ -374,7 +374,7 @@ def on_command(msg: C2dCommand):
         print("Capturing image to upload to S3...")
         s3_upload_triggered = True
         if msg.ack_id is not None: # it could be a command without "Acknowledgement Required" flag in the device template
-            iotconnect_client.send_command_ack(msg, C2dAck.CMD_SUCCESS_WITH_ACK, "Uploading...")
+            iotconnect_client.send_command_ack(msg, C2dAck.CMD_SUCCESS_WITH_ACK, "Upload Triggered")
     else:
         print("Command %s not implemented!" % msg.command_name)
         if msg.ack_id is not None: # it could be a command without "Acknowledgement Required" flag in the device template
@@ -507,7 +507,7 @@ def main():
     args = parser.parse_args()
 
     stai_inference = StAiInference(args.model_file)
-    camera = CameraPipeline(stai_inference, use_usb_camera=args.usb, show_window=True)  # Set to False to disable window
+    camera = CameraPipeline(stai_inference, use_usb_camera=args.usb, show_window=False)  # Set to False to disable window
     loop = GLib.MainLoop()
 
     try:
