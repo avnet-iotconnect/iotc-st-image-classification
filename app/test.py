@@ -2,6 +2,7 @@ import gi
 gi.require_version('Gst', '1.0')
 from gi.repository import Gst, GLib
 import subprocess
+from PIL import Image
 
 print("Starting test")
 
@@ -57,6 +58,16 @@ def on_new_sample(sink):
         print("Got frame", cpt_frame)
         if cpt_frame == 0:
             update_isp_config()
+            # Save the image
+            buffer = sample.get_buffer()
+            caps = sample.get_caps()
+            width, height = caps.get_structure(0).get_value("width"), caps.get_structure(0).get_value("height")
+            success, map_info = buffer.map(Gst.MapFlags.READ)
+            if success:
+                img = Image.frombytes("RGB", (width, height), map_info.data)
+                img.save("/tmp/test_image.jpg")
+                print("Image saved to /tmp/test_image.jpg")
+                buffer.unmap(map_info)
         cpt_frame += 1
         if cpt_frame == 1:
             GLib.idle_add(loop.quit)
