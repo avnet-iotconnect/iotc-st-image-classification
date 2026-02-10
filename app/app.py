@@ -273,16 +273,16 @@ class CameraPipeline:
         )
 
         if show_window:
-            # Split stream to both processing and display with text overlay
+            # Split stream: clean frames to appsink for inference, overlay only on display branch
             self.pipeline = Gst.parse_launch(
-                f"{src} ! {text_overlay} tee name=t ! "
+                f"{src} ! tee name=t ! "
                 "queue ! video/x-raw,format=RGB ! appsink name=sink emit-signals=True sync=true "
-                "t. ! queue ! videoconvert ! autovideosink sync=false"
+                f"t. ! queue ! {text_overlay} videoconvert ! autovideosink sync=false"
             )
         else:
-            # Processing only with text overlay (though it won't be visible)
+            # Processing only - no overlay needed
             self.pipeline = Gst.parse_launch(
-                f"{src} ! {text_overlay} video/x-raw,format=RGB ! appsink name=sink emit-signals=True sync=true"
+                f"{src} ! video/x-raw,format=RGB ! appsink name=sink emit-signals=True sync=true"
             )
 
         self.appsink = self.pipeline.get_by_name("sink")
@@ -373,6 +373,8 @@ def on_command(msg: C2dCommand):
     if msg.command_name == "capture":
         print("Capturing image to upload to S3...")
         s3_upload_triggered = True
+        if msg.ack_id is not None: # it could be a command without "Acknowledgement Required" flag in the device template
+            iotconnect_client.send_command_ack(msg, C2dAck.CMD_SUCCESS_WITH_ACK, "Uploading...")
     else:
         print("Command %s not implemented!" % msg.command_name)
         if msg.ack_id is not None: # it could be a command without "Acknowledgement Required" flag in the device template
