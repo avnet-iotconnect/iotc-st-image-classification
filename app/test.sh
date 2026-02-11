@@ -1,4 +1,3 @@
-#!/bin/sh
 #
 # Copyright (c) 2024 STMicroelectronics.
 # All rights reserved.
@@ -15,9 +14,9 @@ source $CONFIG
 
 # Original ST application launch command, using the stai wrapper and the config_board_*.sh variables
 if [ "$RUN_ST" = "1" ]; then
-    cmd="python3 /usr/local/x-linux-ai/image-classification/stai_mpu_image_classification.py -m /usr/local/x-linux-ai/image-classification/models/$IMAGE_CLASSIFICATION_MODEL -l /usr/local/x-linux-ai/image-classification/models/$IMAGE_CLASSIFICATION_LABEL.txt --framerate $DFPS --frame_width $DWIDTH --frame_height $DHEIGHT $OPTIONS"
+  cmd="python3 /usr/local/x-linux-ai/image-classification/stai_mpu_image_classification.py -m /usr/local/x-linux-ai/image-classification/models/$IMAGE_CLASSIFICATION_MODEL -l /usr/local/x-linux-ai/image-classification/models/$IMAGE_CLASSIFICATION_LABEL.txt --framerate $DFPS --frame_width $DWIDTH --frame_height $DHEIGHT $OPTIONS"
 else
-  cmd="python3 /home/root/app/test.py"
+  cmd="python3 /home/root/app/test.py --framerate $DFPS --frame_width $DWIDTH --frame_height $DHEIGHT $OPTIONS"
 fi
 weston_user=root
 
@@ -29,4 +28,4 @@ weston_user=root
 #	$cmd
 #fi
 
-timeout 6 script -qc "su -l $weston_user -c '$cmd'"
+timeout 8 script -qc "su -l $weston_user -c '$cmd'"

@@ -221,7 +221,7 @@ class CameraPipeline:
         Call ST's setup_camera.sh to configure the media pipeline.
         Returns (video_device, camera_caps, dcmipp_sensor, main_postproc) tuple.
         """
-        config_camera = f"/usr/local/x-linux-ai/resources/setup_camera.sh {width} {height} {framerate} ribbon"
+        config_camera = f"/usr/local/x-linux-ai/resources/setup_camera.sh {width} {height} {framerate} 224 224"
         x = subprocess.check_output(config_camera, shell=True)
         x = x.decode("utf-8")
         print(x)

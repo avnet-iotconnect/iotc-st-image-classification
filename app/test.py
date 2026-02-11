@@ -10,7 +10,7 @@ Gst.init(None)
 Gtk.init(None)
 
 # Setup camera for dual pipelines
-subprocess.call(["/usr/local/x-linux-ai/resources/setup_camera.sh", "760", "568", "30", "224", "224", "ribbon"])
+subprocess.call(["/usr/local/x-linux-ai/resources/setup_camera.sh", "760", "568", "30", "224", "224"])
 
 class TestWidget(Gtk.Box):
     def __init__(self):
