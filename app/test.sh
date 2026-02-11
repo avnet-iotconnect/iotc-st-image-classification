@@ -14,11 +14,14 @@ CONFIG=$(find /usr/local/x-linux-ai -name "config_board_*.sh")
 source $CONFIG
 
 # Original ST application launch command, using the stai wrapper and the config_board_*.sh variables
-# cmd="python3 /usr/local/x-linux-ai/image-classification/stai_mpu_image_classification.py -m /usr/local/x-linux-ai/image-classification/models/$IMAGE_CLASSIFICATION_MODEL -l /usr/local/x-linux-ai/image-classification/models/$IMAGE_CLASSIFICATION_LABEL.txt --framerate $DFPS --frame_width $DWIDTH --frame_height $DHEIGHT $OPTIONS"
-
-cmd="python3 /home/root/app/test.py"
-
+if [ "$RUN_ST" = "1" ]; then
+  cmd="python3 /usr/local/x-linux-ai/image-classification/stai_mpu_image_classification.py -m /usr/local/x-linux-ai/image-classification/models/$IMAGE_CLASSIFICATION_MODEL -l /usr/local/x-linux-ai/image-classification/models/$IMAGE_CLASSIFICATION_LABEL.txt --framerate $DFPS --frame_width $DWIDTH --frame_height $DHEIGHT $OPTIONS"
+else
+  cmd="python3 /home/root/app/test.py"
+fi
 weston_user=root
+
+# DO NOT REMOVE THIS COMMENTED OUT CODE BLOCK
 #if [ "$weston_user" != "root" ]; then
 #	echo "user : "$weston_user
 #	script -qc "su -l $weston_user -c '$cmd'"
