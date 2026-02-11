@@ -221,7 +221,7 @@ class CameraPipeline:
         Call ST's setup_camera.sh to configure the media pipeline.
         Returns (video_device, camera_caps, dcmipp_sensor, main_postproc) tuple.
         """
-        config_camera = f"/usr/local/x-linux-ai/resources/setup_camera.sh {width} {height} {framerate} \"\""
+        config_camera = f"/usr/local/x-linux-ai/resources/setup_camera.sh {width} {height} {framerate} ribbon"
         x = subprocess.check_output(config_camera, shell=True)
         x = x.decode("utf-8")
         print(x)
@@ -257,9 +257,9 @@ class CameraPipeline:
         if use_usb_camera:
             src = "v4l2src device=/dev/video7 io-mode=4 ! image/jpeg,width=640,height=480,framerate=30/1 ! jpegdec ! videoconvert"
         else:
-            video_device, camera_caps, dcmipp_sensor, main_postproc = CameraPipeline.setup_camera()
-            device = f"/dev/{video_device}"
-            caps = f"{camera_caps},framerate=30/1"
+            video_device, camera_caps, dcmipp_sensor, main_postproc = CameraPipeline.setup_camera(width=760, height=568, framerate=30)
+            device = "/dev/video1"  # Hardcode for ribbon
+            caps = "video/x-raw,format=RGB16,width=760,height=568,framerate=30/1"
             src = f"v4l2src device={device} ! videorate ! {caps} ! videoconvert"
             print(f"Using ribbon camera: device={device}, caps={caps}")
 
@@ -277,13 +277,13 @@ class CameraPipeline:
             # Split stream: clean frames to appsink for inference, overlay only on display branch
             self.pipeline = Gst.parse_launch(
                 f"{src} ! tee name=t ! "
-                "queue ! videoconvert ! videoscale ! video/x-raw,format=RGB,width=224,height=224 ! appsink name=sink emit-signals=True sync=true "
-                f"t. ! queue ! {text_overlay} videoconvert ! autovideosink sync=false"
+                "queue max-size-buffers=1 leaky=2 ! videoconvert ! videoscale ! video/x-raw,format=RGB,width=224,height=224 ! appsink name=sink emit-signals=True sync=true "
+                f"t. ! queue max-size-buffers=1 leaky=2 ! {text_overlay} videoconvert ! autovideosink sync=false"
             )
         else:
             # Processing only - no overlay needed
             self.pipeline = Gst.parse_launch(
-                f"{src} ! videoconvert ! videoscale ! video/x-raw,format=RGB,width=224,height=224 ! appsink name=sink emit-signals=True sync=true"
+                f"{src} ! queue max-size-buffers=1 leaky=2 ! videoconvert ! videoscale ! video/x-raw,format=RGB,width=224,height=224 ! appsink name=sink emit-signals=True sync=true"
             )
 
         self.appsink = self.pipeline.get_by_name("sink")
