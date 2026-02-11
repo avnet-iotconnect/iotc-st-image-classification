@@ -343,4 +343,10 @@ poweroff
 ```
 - Remove the power and plug it back in.
 
+# U-Boot notes:
+  207  apt install u-boot-fw-config-stm32mp
+  208  which fw_printenv
+  210  fw_printenv bootargs
+  211  cp /etc/fw_env.config.mmc /etc/fw_env.config
+  212  fw_printenv
 
