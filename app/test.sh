@@ -16,12 +16,14 @@ source $CONFIG
 # Original ST application launch command, using the stai wrapper and the config_board_*.sh variables
 # cmd="python3 /usr/local/x-linux-ai/image-classification/stai_mpu_image_classification.py -m /usr/local/x-linux-ai/image-classification/models/$IMAGE_CLASSIFICATION_MODEL -l /usr/local/x-linux-ai/image-classification/models/$IMAGE_CLASSIFICATION_LABEL.txt --framerate $DFPS --frame_width $DWIDTH --frame_height $DHEIGHT $OPTIONS"
 
-cmd="python3 test.py"
+cmd="python3 /home/root/app/test.py"
 
 weston_user=root
-if [ "$weston_user" != "root" ]; then
-	echo "user : "$weston_user
-	timeout 5 script -qc "su -l $weston_user -c '$cmd'"
-else
-	timeout 5 $cmd
-fi
+#if [ "$weston_user" != "root" ]; then
+#	echo "user : "$weston_user
+#	script -qc "su -l $weston_user -c '$cmd'"
+#else
+#	$cmd
+#fi
+
+timeout 6 script -qc "su -l $weston_user -c '$cmd'"
