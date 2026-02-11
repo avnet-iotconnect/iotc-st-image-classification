@@ -1,6 +1,7 @@
 # This example's inference approach is based on "How to run inference using the STAI MPU Python API":
 # https://wiki.st.com/stm32mpu/wiki/How_to_run_inference_using_the_STAI_MPU_Python_API
 # The GST pipeline approach is (somewhat) -based on the X-Linux-AI image classification examples.
+# Note debug GST: GST_DEBUG=v4l2*:5
 
 import os
 import random
@@ -215,12 +216,12 @@ class StAiInference:
 
 class CameraPipeline:
     @staticmethod
-    def setup_camera(width=640, height=480, framerate=30):
+    def setup_camera(width=760, height=568, framerate=30):
         """
         Call ST's setup_camera.sh to configure the media pipeline.
         Returns (video_device, camera_caps, dcmipp_sensor, main_postproc) tuple.
         """
-        config_camera = f"/usr/local/x-linux-ai/resources/setup_camera.sh 640 480 30"
+        config_camera = f"/usr/local/x-linux-ai/resources/setup_camera.sh {width} {height} {framerate} \"\""
         x = subprocess.check_output(config_camera, shell=True)
         x = x.decode("utf-8")
         print(x)
@@ -243,7 +244,6 @@ class CameraPipeline:
             if line.startswith("MAIN_POSTPROC="):
                 main_postproc = line.split('=', 1)[1]
 
-
         return video_device_prev, camera_caps_prev, dcmipp_sensor, main_postproc
 
     def __init__(self, model, use_usb_camera=False, show_window=True):
@@ -258,13 +258,9 @@ class CameraPipeline:
             src = "v4l2src device=/dev/video7 io-mode=4 ! image/jpeg,width=640,height=480,framerate=30/1 ! jpegdec ! videoconvert"
         else:
             video_device, camera_caps, dcmipp_sensor, main_postproc = CameraPipeline.setup_camera()
-            self.dcmipp_sensor = dcmipp_sensor
-            self.main_postproc = main_postproc
-            self.isp_first_config = True
-            self.cpt_frame = 0
             device = f"/dev/{video_device}"
             caps = f"{camera_caps},framerate=30/1"
-            src = f"v4l2src device={device} ! videorate ! {caps} ! tee name=t"
+            src = f"v4l2src device={device} ! videorate ! {caps} ! videoconvert"
             print(f"Using ribbon camera: device={device}, caps={caps}")
 
         print("src=", src)
@@ -280,19 +276,19 @@ class CameraPipeline:
         if show_window:
             # Split stream: clean frames to appsink for inference, overlay only on display branch
             self.pipeline = Gst.parse_launch(
-                f"{src} ! queue ! videoconvert ! videoscale ! video/x-raw,format=RGB,width=224,height=224 ! appsink name=sink emit-signals=True sync=true t. ! queue ! {text_overlay} videoconvert ! autovideosink sync=false"
+                f"{src} ! tee name=t ! "
+                "queue ! videoconvert ! videoscale ! video/x-raw,format=RGB,width=224,height=224 ! appsink name=sink emit-signals=True sync=true "
+                f"t. ! queue ! {text_overlay} videoconvert ! autovideosink sync=false"
             )
         else:
             # Processing only - no overlay needed
             self.pipeline = Gst.parse_launch(
-                f"{src} ! queue ! videoconvert ! videoscale ! video/x-raw,format=RGB,width=224,height=224 ! appsink name=sink emit-signals=True sync=true"
+                f"{src} ! videoconvert ! videoscale ! video/x-raw,format=RGB,width=224,height=224 ! appsink name=sink emit-signals=True sync=true"
             )
 
         self.appsink = self.pipeline.get_by_name("sink")
         self.appsink.connect("new-sample", self.on_new_frame)
         self.overlay = self.pipeline.get_by_name("overlay")
-
-
         self.pipeline.set_state(Gst.State.PLAYING)
 
         bus = self.pipeline.get_bus()
