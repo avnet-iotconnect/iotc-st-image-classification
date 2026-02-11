@@ -1,0 +1,27 @@
+#!/bin/sh
+#
+# Copyright (c) 2024 STMicroelectronics.
+# All rights reserved.
+#
+# This software is licensed under terms that can be found in the LICENSE file
+# in the root directory of this software component.
+# If no LICENSE file comes with this software, it is provided AS-IS.
+
+weston_user=$(ps aux | grep '/usr/bin/weston '|grep -v 'grep'|awk '{print $1}')
+FRAMEWORK=$1
+echo "stai wrapper used : "$FRAMEWORK
+CONFIG=$(find /usr/local/x-linux-ai -name "config_board_*.sh")
+source $CONFIG
+
+# Original ST application launch command, using the stai wrapper and the config_board_*.sh variables
+# cmd="python3 /usr/local/x-linux-ai/image-classification/stai_mpu_image_classification.py -m /usr/local/x-linux-ai/image-classification/models/$IMAGE_CLASSIFICATION_MODEL -l /usr/local/x-linux-ai/image-classification/models/$IMAGE_CLASSIFICATION_LABEL.txt --framerate $DFPS --frame_width $DWIDTH --frame_height $DHEIGHT $OPTIONS"
+
+cmd="python3 test.py"
+
+weston_user=root
+if [ "$weston_user" != "root" ]; then
+	echo "user : "$weston_user
+	timeout 5 script -qc "su -l $weston_user -c '$cmd'"
+else
+	timeout 5 $cmd
+fi
