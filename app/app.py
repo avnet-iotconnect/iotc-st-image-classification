@@ -266,7 +266,6 @@ class CameraPipeline:
         else:
             video_device, camera_caps, nn_device, nn_caps, dcmipp_sensor, main_postproc = CameraPipeline.setup_camera(width=760, height=568, framerate=30)
             device = f"/dev/{nn_device}"
-            caps = camera_caps
             src = f"v4l2src device={device} ! videorate ! {nn_caps} ! videoconvert"
             print(f"Using ribbon camera: device={device}, caps={nn_caps}")
 

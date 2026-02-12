@@ -343,10 +343,51 @@ poweroff
 ```
 - Remove the power and plug it back in.
 
-# U-Boot notes:
-  207  apt install u-boot-fw-config-stm32mp
-  208  which fw_printenv
-  210  fw_printenv bootargs
-  211  cp /etc/fw_env.config.mmc /etc/fw_env.config
-  212  fw_printenv
+
+# KVS Notes:
+
+It is possible that a device will reboot during build.
+This may help:
+```bash
+systemctl stop weston-graphical-session
+```
+Then start after teh build if needed.
+
+```bash
+apt install -y gcc g++ gcc-symlinks g++-symlinks make binutils autoconf automake liba
+```
+
+ Only some modules are needed for various deps. Avoid headache and install all
+TODO: see if we need help2man-doc. help2man shoudl be default
+
+Needed:
+ - erl-module-text-tabs
+ - perl-module-findbin
+
+```bash
+apt install -y help2man help2man-doc  #  
+apt install -y perl-modules 
+```
+
+The build has a problem spawning too many compiler processes and triggering a crash/reboot or watchdog.
+If you see a reboot while compiling project_log4cplus, this is the likely culprit.
+Limit it with the flags below.
+
+May need to modify:
+amazon-kinesis-video-streams-producer-sdk-cpp/CMake/Depen
+dencies/liblog4cplus-CMakeLists.txt
+       BUILD_COMMAND     ${MAKE_EXE} -j2                  
+       BUILD_IN_SOURCE   TRUE                             
+       INSTALL_COMMAND   ${MAKE_EXE} install -j2
+
+
+```bash
+git clone https://github.com/awslabs/amazon-kinesis-video-streams-producer-sdk-cpp.git
+cd amazon-kinesis-video-streams-producer-sdk-cpp
+mkdir build
+cd build
+cmake -DPARALLEL_BUILD=OFF -DCMAKE_BUILD_PARALLEL_LEVEL=2 -DMAKEFLAGS=-j2 ..
+```
+
+
 
