@@ -354,11 +354,11 @@ systemctl stop weston-graphical-session
 Then start after teh build if needed.
 
 ```bash
-apt install -y gcc g++ gcc-symlinks g++-symlinks make binutils autoconf automake liba
+apt install -y gcc g++ gcc-symlinks g++-symlinks make binutils pkgconfig autoconf automake libautoconf 
 ```
 
  Only some modules are needed for various deps. Avoid headache and install all
-TODO: see if we need help2man-doc. help2man shoudl be default
+TODO: see if we need help2man-doc. help2man should be default
 
 Needed:
  - erl-module-text-tabs
@@ -366,7 +366,8 @@ Needed:
 
 ```bash
 apt install -y help2man help2man-doc  #  
-apt install -y perl-modules 
+apt install -y perl-modules
+apt install -y meson ninja # for glib? maybe?
 ```
 
 The build has a problem spawning too many compiler processes and triggering a crash/reboot or watchdog.
@@ -386,7 +387,18 @@ git clone https://github.com/awslabs/amazon-kinesis-video-streams-producer-sdk-c
 cd amazon-kinesis-video-streams-producer-sdk-cpp
 mkdir build
 cd build
-cmake -DPARALLEL_BUILD=OFF -DCMAKE_BUILD_PARALLEL_LEVEL=2 -DMAKEFLAGS=-j2 ..
+cmake \
+  -BUILD_GSTREAMER_PLUGIN=ON \
+  -DPARALLEL_BUILD=OFF \
+  ..
+```
+
+# python https://github.com/aws-samples/python-samples-for-amazon-kinesis-video-streams-with-webrtc
+
+- Edit and reduce with "whatever is there" (so no version expliclity):
+```
+pycairo
+PyGObject
 ```
 
 
