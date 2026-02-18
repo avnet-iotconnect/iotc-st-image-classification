@@ -39,7 +39,7 @@ class MediaTrackManager:
 
     def create_media_track(self):
         relay = MediaRelay()
-        options = {'framerate': '30', 'video_size': '1280x720'}
+        options = {'framerate': '30', 'video_size': '640x480'}
         system = platform.system()
 
         if self.file_path and not os.path.exists(self.file_path):
@@ -50,7 +50,7 @@ class MediaTrackManager:
         elif system == 'Windows':
             media = MediaPlayer('video=Integrated Camera', format='dshow', options=options)
         elif system == 'Linux':
-            media = MediaPlayer('/dev/video0', format='v4l2', options=options) if not self.file_path else MediaPlayer(self.file_path)
+            media = MediaPlayer('/dev/video7', format='v4l2', options=options) if not self.file_path else MediaPlayer(self.file_path)
         else:
             raise NotImplementedError(f"Unsupported platform: {system}")
 
