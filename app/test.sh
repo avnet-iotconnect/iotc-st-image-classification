@@ -28,4 +28,4 @@ weston_user=root
 #	$cmd
 #fi
 
-timeout 8 script -qc "su -l $weston_user -c '$cmd'"
+script -qc "su -l $weston_user -c '$cmd'"

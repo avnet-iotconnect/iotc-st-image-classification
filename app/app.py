@@ -285,12 +285,12 @@ class CameraPipeline:
         else:
             # MIPI: two separate V4L2 devices from setup_camera.sh
             prev_device, prev_caps, nn_device, nn_caps, dcmipp_sensor, main_postproc = CameraPipeline.setup_camera(width=760, height=568, framerate=30)
-            print(f"MIPI preview: device={prev_device}, caps={prev_caps}")
-            print(f"MIPI NN:      device={nn_device}, caps={nn_caps}")
+            print(f"MIPI preview: device=/dev/{prev_device}, caps={prev_caps}")
+            print(f"MIPI NN:      device=/dev/{nn_device}, caps={nn_caps}")
 
             # NN pipeline: dedicated device, direct to appsink
             self.pipeline_nn = Gst.parse_launch(
-                f"v4l2src device={nn_device} ! {nn_caps} ! "
+                f"v4l2src device=/dev/{nn_device} ! {nn_caps} ! "
                 "queue max-size-buffers=1 leaky=2 ! "
                 "appsink name=nn_sink emit-signals=True sync=false drop=true"
             )
@@ -300,7 +300,7 @@ class CameraPipeline:
             if show_window:
                 display_branch = f"queue ! {text_overlay} ! videoconvert ! autovideosink sync=false"
                 self.pipeline_preview = Gst.parse_launch(
-                    f"v4l2src device={prev_device} ! {prev_caps} ! "
+                    f"v4l2src device=/dev/{prev_device} ! {prev_caps} ! "
                     f"tee name=t ! {preview_branch} "
                     f"t. ! {display_branch}"
                 )
