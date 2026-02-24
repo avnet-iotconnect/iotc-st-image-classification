@@ -206,14 +206,14 @@ class StAiInference:
                 # if "non-tfhub" model is passed with 1000 classes
                 class_name = self.labels[i + offset]
                 if self.output_tensor_dtype == np.uint8:
-                    print('# {:08.6f}: {}'.format(float(results[i] / 255.0), class_name), end='')
+                    pass # print('# {:08.6f}: {}'.format(float(results[i] / 255.0), class_name), end='')
                 else:
-                    print('# {:08.6f}: {}'.format(float(results[i]), class_name), end='')
+                    pass # print('# {:08.6f}: {}'.format(float(results[i]), class_name), end='')
             stai_ic_telemetry.class1 = self.labels[top_k[0] + offset]
             stai_ic_telemetry.class2 = self.labels[top_k[1] + offset]
             stai_ic_telemetry.confidence1 = float(round(results[top_k[0]] * 100, 2))
             stai_ic_telemetry.confidence2 = float(round(results[top_k[1]] * 100, 2))
-            print("")
+            # print("")
 
 class CameraPipeline:
     @staticmethod
@@ -260,97 +260,131 @@ class CameraPipeline:
         self.frame_count = 0
         self.show_window = show_window
         self.webrtc_queue = queue.Queue(maxsize=1)
+        self.pipelines = []
 
-        # USB camera uses MJPG and needs jpegdec
-        # Ribbon camera (MIPI CSI) uses setup_camera.sh to configure media pipeline
-        if use_usb_camera:
-            src = "v4l2src device=/dev/video7 io-mode=4 ! image/jpeg,width=640,height=480,framerate=30/1 ! jpegdec ! videoconvert"
-        else:
-            video_device, camera_caps, nn_device, nn_caps, dcmipp_sensor, main_postproc = CameraPipeline.setup_camera(width=760, height=568, framerate=30)
-            device = f"/dev/{nn_device}"
-            src = f"v4l2src device={nn_device} ! videorate ! {nn_caps} ! videoconvert"
-            print(f"Using ribbon camera: device={nn_device}, caps={nn_caps}")
-
-        print("src=", src)
-        # Text overlay configuration
         text_overlay = (
             "textoverlay name=overlay "
             "text=\"Camera Stream\" "
             "valignment=top halignment=left "
             "font-desc=\"Sans, 24\" "
-            "shaded-background=true ! "
+            "shaded-background=true"
         )
 
-        if show_window:
-            # Split stream: clean frames to appsink for inference, overlay only on display branch
-                self.pipeline = Gst.parse_launch(
-                    f"{src} ! tee name=t ! "
-                    "queue ! videoconvert ! videoscale ! video/x-raw,format=RGB,width=224,height=224 ! appsink name=sink emit-signals=True sync=true "
-                    f"t. ! queue ! {text_overlay} videoconvert ! autovideosink sync=false"
-                )
+        if use_usb_camera:
+            # USB: single device, tee into inference + preview/display branches
+            src = "v4l2src device=/dev/video7 io-mode=4 ! image/jpeg,width=640,height=480,framerate=30/1 ! jpegdec ! videoconvert"
+            nn_branch = "queue ! videoconvert ! videoscale ! video/x-raw,format=RGB,width=224,height=224 ! appsink name=nn_sink emit-signals=True sync=false drop=true"
+            preview_branch = "queue ! videoconvert ! video/x-raw,format=RGB ! appsink name=preview_sink emit-signals=True sync=false drop=true"
+            if show_window:
+                display_branch = f"queue ! {text_overlay} ! videoconvert ! autovideosink sync=false"
+                pipeline_str = f"{src} ! tee name=t ! {nn_branch} t. ! {preview_branch} t. ! {display_branch}"
+            else:
+                pipeline_str = f"{src} ! tee name=t ! {nn_branch} t. ! {preview_branch}"
+            self.pipeline_preview = Gst.parse_launch(pipeline_str)
+            self.pipeline_nn = self.pipeline_preview  # same pipeline
         else:
-            # Processing only - no overlay needed
-            self.pipeline = Gst.parse_launch(
-                f"{src} ! videoconvert ! videoscale ! video/x-raw,format=RGB,width=224,height=224 ! appsink name=sink emit-signals=True sync=true"
+            # MIPI: two separate V4L2 devices from setup_camera.sh
+            prev_device, prev_caps, nn_device, nn_caps, dcmipp_sensor, main_postproc = CameraPipeline.setup_camera(width=760, height=568, framerate=30)
+            print(f"MIPI preview: device={prev_device}, caps={prev_caps}")
+            print(f"MIPI NN:      device={nn_device}, caps={nn_caps}")
+
+            # NN pipeline: dedicated device, direct to appsink
+            self.pipeline_nn = Gst.parse_launch(
+                f"v4l2src device={nn_device} ! {nn_caps} ! "
+                "queue max-size-buffers=1 leaky=2 ! "
+                "appsink name=nn_sink emit-signals=True sync=false drop=true"
             )
 
-        self.appsink = self.pipeline.get_by_name("sink")
-        self.appsink.connect("new-sample", self.on_new_frame)
-        self.overlay = self.pipeline.get_by_name("overlay")
-        self.pipeline.set_state(Gst.State.PLAYING)
+            # Preview pipeline: display + WebRTC
+            preview_branch = "queue ! videoconvert ! video/x-raw,format=RGB ! appsink name=preview_sink emit-signals=True sync=false drop=true"
+            if show_window:
+                display_branch = f"queue ! {text_overlay} ! videoconvert ! autovideosink sync=false"
+                self.pipeline_preview = Gst.parse_launch(
+                    f"v4l2src device={prev_device} ! {prev_caps} ! "
+                    f"tee name=t ! {preview_branch} "
+                    f"t. ! {display_branch}"
+                )
+            else:
+                self.pipeline_preview = Gst.parse_launch(
+                    f"v4l2src device={prev_device} ! {prev_caps} ! "
+                    f"{preview_branch}"
+                )
 
-        bus = self.pipeline.get_bus()
-        bus.add_signal_watch()
-        bus.connect("message::error", self.on_error)
-        bus.connect("message::warning", self.on_warning)
+        # Connect appsinks
+        self.pipeline_nn.get_by_name("nn_sink").connect("new-sample", self.on_nn_frame)
+        self.pipeline_preview.get_by_name("preview_sink").connect("new-sample", self.on_preview_frame)
+        self.overlay = self.pipeline_preview.get_by_name("overlay")
 
-    def on_new_frame(self, sink):
-        global s3_upload_triggered
+        # Start pipelines
+        for p in set([self.pipeline_nn, self.pipeline_preview]):
+            p.set_state(Gst.State.PLAYING)
+            bus = p.get_bus()
+            bus.add_signal_watch()
+            bus.connect("message::error", self.on_error)
+            bus.connect("message::warning", self.on_warning)
+            self.pipelines.append(p)
+
+    def on_nn_frame(self, sink):
         sample = sink.emit("pull-sample")
         if not sample:
             return Gst.FlowReturn.ERROR
-
         buffer = sample.get_buffer()
         caps = sample.get_caps()
         width, height = caps.get_structure(0).get_value("width"), caps.get_structure(0).get_value("height")
-
         success, map_info = buffer.map(Gst.MapFlags.READ)
         if not success:
             return Gst.FlowReturn.ERROR
 
-        # Process frame
         img = Image.frombytes("RGB", (width, height), map_info.data)
-        try:
-            self.webrtc_queue.put_nowait(np.array(img))
-        except queue.Full:
-            pass
         self.model.inference(img)
-        # Update frame counter and calculate FPS
+
         self.frame_count += 1
         now = time.perf_counter()
         elapsed = now - self.last_time
-
-        if elapsed >= 1.0:  # Update text every second
+        if elapsed >= 1.0:
             fps = int(self.frame_count / elapsed)
-            if self.show_window:
+            if self.show_window and self.overlay:
                 text = "Camera Stream"
                 if stai_ic_telemetry.class1 is not None:
                     text = f"{stai_ic_telemetry.class1} {round(stai_ic_telemetry.confidence1)}%"
                 self.overlay.set_property("text", f"{text}\nFPS: {fps}")
-            if s3_upload_triggered:
-                s3_upload_triggered = False
-                print("Uploading screencap to S3...")
-                img.save("/tmp/output_image.jpg")
-                upload_screencap(
-                    label=stai_ic_telemetry.class1,
-                    confidence=stai_ic_telemetry.confidence1,
-                    fps=fps,
-                    local_path="/tmp/output_image.jpg"
-                )
             stai_ic_telemetry.fps = fps
             self.frame_count = 0
             self.last_time = now
             print(f"FPS: {fps}")
+
+        buffer.unmap(map_info)
+        return Gst.FlowReturn.OK
+
+    def on_preview_frame(self, sink):
+        global s3_upload_triggered
+        sample = sink.emit("pull-sample")
+        if not sample:
+            return Gst.FlowReturn.ERROR
+        buffer = sample.get_buffer()
+        caps = sample.get_caps()
+        width, height = caps.get_structure(0).get_value("width"), caps.get_structure(0).get_value("height")
+        success, map_info = buffer.map(Gst.MapFlags.READ)
+        if not success:
+            return Gst.FlowReturn.ERROR
+
+        frame = np.ndarray(shape=(height, width, 3), dtype=np.uint8, buffer=map_info.data).copy()
+        try:
+            self.webrtc_queue.put_nowait(frame)
+        except queue.Full:
+            pass
+
+        if s3_upload_triggered:
+            s3_upload_triggered = False
+            print("Uploading screencap to S3...")
+            img = Image.fromarray(frame)
+            img.save("/tmp/output_image.jpg")
+            upload_screencap(
+                label=stai_ic_telemetry.class1,
+                confidence=stai_ic_telemetry.confidence1,
+                fps=stai_ic_telemetry.fps,
+                local_path="/tmp/output_image.jpg"
+            )
 
         buffer.unmap(map_info)
         return Gst.FlowReturn.OK
@@ -563,7 +597,8 @@ def main():
     try:
         loop.run()
     except KeyboardInterrupt:
-        camera.pipeline.set_state(Gst.State.NULL)
+        for p in camera.pipelines:
+            p.set_state(Gst.State.NULL)
 
 if __name__ == "__main__":
     main()
