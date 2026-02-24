@@ -1,50 +1,58 @@
-# KVS WebRTC Master client for streaming frames from the GStreamer pipeline.
-# Based on the AWS kvsWebRTCClientMaster.py example, adapted to receive frames
-# from a queue (fed by the GStreamer appsink in app.py) instead of opening a
-# camera device directly.
-
-import asyncio
-import av
 import boto3
 import json
-import numpy as np
-import queue
+import platform
 import websockets
-from aiortc import MediaStreamTrack, RTCConfiguration, RTCIceServer, RTCPeerConnection, RTCSessionDescription
-from aiortc.contrib.media import MediaBlackhole
+from aiortc import RTCConfiguration, RTCIceServer, RTCPeerConnection, RTCSessionDescription
+from aiortc.contrib.media import MediaBlackhole, MediaPlayer, MediaRelay
 from aiortc.sdp import candidate_from_sdp
 from base64 import b64decode, b64encode
 from botocore.auth import SigV4QueryAuth
 from botocore.awsrequest import AWSRequest
 from botocore.credentials import Credentials
 from botocore.session import Session
+import os
+import sys
+import logging
+import requests
+from typing import Dict, Optional
+
+logging.basicConfig(level=logging.INFO, stream=sys.stdout)
+
+# Construct script_output_path
 
 
-class FrameQueueVideoTrack(MediaStreamTrack):
-    kind = "video"
+class MediaTrackManager:
+    def __init__(self, file_path=None):
+        self.file_path = file_path
 
-    def __init__(self, frame_queue: queue.Queue):
-        super().__init__()
-        self._queue = frame_queue
-        self._timestamp = 0
+    def create_media_track(self):
+        relay = MediaRelay()
+        options = {'framerate': '30', 'video_size': '640x480'}
+        system = platform.system()
 
-    async def recv(self):
-        loop = asyncio.get_event_loop()
-        frame_array = await loop.run_in_executor(None, self._queue.get)
-        frame = av.VideoFrame.from_ndarray(frame_array, format='rgb24')
-        frame.pts = self._timestamp
-        frame.time_base = '1/30'
-        self._timestamp += 1
-        return frame
+        if self.file_path and not os.path.exists(self.file_path):
+            raise FileNotFoundError(f"The file {self.file_path} does not exist.")
+        elif system == 'Linux':
+            media = MediaPlayer('/dev/video7', format='v4l2', options=options) if not self.file_path else MediaPlayer(self.file_path)
+        else:
+            raise NotImplementedError(f"Unsupported platform: {system}")
+
+        audio_track = relay.subscribe(media.audio) if media.audio else None
+        video_track = relay.subscribe(media.video) if media.video else None
+
+        if audio_track is None and video_track is None:
+            raise ValueError("Neither audio nor video track could be created from the source.")
+
+        return audio_track, video_track
 
 
 class KinesisVideoClient:
-    def __init__(self, client_id, region, channel_arn, credentials, frame_queue):
+    def __init__(self, client_id, region, channel_arn, credentials, file_path=None):
         self.client_id = client_id
         self.region = region
         self.channel_arn = channel_arn
         self.credentials = credentials
-        self.video_track = FrameQueueVideoTrack(frame_queue)
+        self.media_manager = MediaTrackManager(file_path)
         if self.credentials:
             self.kinesisvideo = boto3.client('kinesisvideo',
                                              region_name=self.region,
@@ -62,7 +70,7 @@ class KinesisVideoClient:
         self.DCMap = {}
 
     def get_signaling_channel_endpoint(self):
-        if self.endpoints is None:
+        if self.endpoints is None:  # Check if endpoints are already fetched
             endpoints = self.kinesisvideo.get_signaling_channel_endpoint(
                 ChannelARN=self.channel_arn,
                 SingleMasterChannelEndpointConfiguration={'Protocols': ['HTTPS', 'WSS'], 'Role': 'MASTER'}
@@ -101,6 +109,7 @@ class KinesisVideoClient:
                 credential=iceServer['Password']
             ))
         self.ice_servers = iceServers
+
         return self.ice_servers
 
     def create_wss_url(self):
@@ -139,7 +148,7 @@ class KinesisVideoClient:
             'recipientClientId': client_id,
         })
 
-    async def handle_sdp_offer(self, payload, client_id, websocket):
+    async def handle_sdp_offer(self, payload, client_id, audio_track, video_track, websocket):
         iceServers = self.prepare_ice_servers()
         configuration = RTCConfiguration(iceServers=iceServers)
         pc = RTCPeerConnection(configuration=configuration)
@@ -184,7 +193,10 @@ class KinesisVideoClient:
                         print(f"Data channel {i} is not open. Current state: {self.DCMap[i].readyState}")
                 print(f'[{channel.label}] datachannel_message: {dc_message}')
 
-        self.PCMap[client_id].addTrack(self.video_track)
+        if audio_track:
+            self.PCMap[client_id].addTrack(audio_track)
+        if video_track:
+            self.PCMap[client_id].addTrack(video_track)
 
         await self.PCMap[client_id].setRemoteDescription(RTCSessionDescription(
             sdp=payload['sdp'],
@@ -201,6 +213,7 @@ class KinesisVideoClient:
             await self.PCMap[client_id].addIceCandidate(candidate)
 
     async def signaling_client(self):
+        audio_track, video_track = self.media_manager.create_media_track()
         self.get_signaling_channel_endpoint()
         wss_url = self.create_wss_url()
 
@@ -211,7 +224,7 @@ class KinesisVideoClient:
                     async for message in websocket:
                         msg_type, payload, client_id = self.decode_msg(message)
                         if msg_type == 'SDP_OFFER':
-                            await self.handle_sdp_offer(payload, client_id, websocket)
+                            await self.handle_sdp_offer(payload, client_id, audio_track, video_track, websocket)
                         elif msg_type == 'ICE_CANDIDATE':
                             await self.handle_ice_candidate(payload, client_id)
             except websockets.ConnectionClosed:
@@ -219,22 +232,25 @@ class KinesisVideoClient:
                 wss_url = self.create_wss_url()
                 continue
 
+async def run_client(client):
+    await client.signaling_client()
 
-def start_webrtc(region, channel_arn, access_key_id, secret_access_key, session_token, frame_queue):
-    assert all([region, channel_arn, access_key_id, secret_access_key])
+async def main():
 
-    credentials = {
-        'accessKeyId': access_key_id,
-        'secretAccessKey': secret_access_key,
-        'sessionToken': session_token
-    }
+    if not AWS_DEFAULT_REGION:
+        raise Exception("AWS_DEFAULT_REGION environment variable should be configured.\ni.e. export AWS_DEFAULT_REGION=us-west-2")
 
+
+    credentials = None
     client = KinesisVideoClient(
-        client_id="MASTER",
-        region=region,
-        channel_arn=channel_arn,
+        client_id= "MASTER",
+        region=AWS_DEFAULT_REGION,
+        channel_arn=args.channel_arn,
         credentials=credentials,
-        frame_queue=frame_queue
+        file_path=args.file_path
     )
 
-    asyncio.run(client.signaling_client())
+    await run_client(client)
+
+if __name__ == '__main__':
+    asyncio.run(main())
