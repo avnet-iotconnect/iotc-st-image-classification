@@ -1,6 +1,7 @@
 import asyncio
 import json
 import queue
+import traceback
 from base64 import b64decode, b64encode
 
 import av
@@ -24,13 +25,17 @@ class FrameQueueVideoTrack(MediaStreamTrack):
         self._timestamp = 0
 
     async def recv(self):
-        loop = asyncio.get_event_loop()
-        frame_array = await loop.run_in_executor(None, self._queue.get)
-        frame = av.VideoFrame.from_ndarray(frame_array, format='rgb24')
-        frame.pts = self._timestamp
-        frame.time_base = '1/30'
-        self._timestamp += 1
-        return frame
+        try:
+            loop = asyncio.get_event_loop()
+            frame_array = await loop.run_in_executor(None, self._queue.get)
+            frame = av.VideoFrame.from_ndarray(frame_array, format='rgb24')
+            frame.pts = self._timestamp
+            frame.time_base = '1/30'
+            self._timestamp += 1
+            return frame
+        except Exception:
+            traceback.print_exc()
+            raise
 
 
 class KinesisVideoClient:
@@ -216,20 +221,24 @@ class KinesisVideoClient:
 
 
 def start_webrtc(region, channel_arn, access_key_id, secret_access_key, session_token, frame_queue):
-    assert all([region, channel_arn, access_key_id, secret_access_key])
+    try:
+        assert all([region, channel_arn, access_key_id, secret_access_key])
 
-    credentials = {
-        'accessKeyId': access_key_id,
-        'secretAccessKey': secret_access_key,
-        'sessionToken': session_token
-    }
+        credentials = {
+            'accessKeyId': access_key_id,
+            'secretAccessKey': secret_access_key,
+            'sessionToken': session_token
+        }
 
-    client = KinesisVideoClient(
-        client_id="MASTER",
-        region=region,
-        channel_arn=channel_arn,
-        credentials=credentials,
-        frame_queue=frame_queue
-    )
+        client = KinesisVideoClient(
+            client_id="MASTER",
+            region=region,
+            channel_arn=channel_arn,
+            credentials=credentials,
+            frame_queue=frame_queue
+        )
 
-    asyncio.run(client.signaling_client())
+        asyncio.run(client.signaling_client())
+    except Exception:
+        print("WebRTC thread crashed:")
+        traceback.print_exc()
