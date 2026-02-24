@@ -32,11 +32,6 @@ class MediaTrackManager:
 
         if self.file_path and not os.path.exists(self.file_path):
             raise FileNotFoundError(f"The file {self.file_path} does not exist.")
-
-        if system == 'Darwin':
-            media = MediaPlayer('default:default', format='avfoundation', options=options) if not self.file_path else MediaPlayer(self.file_path)
-        elif system == 'Windows':
-            media = MediaPlayer('video=Integrated Camera', format='dshow', options=options)
         elif system == 'Linux':
             media = MediaPlayer('/dev/video7', format='v4l2', options=options) if not self.file_path else MediaPlayer(self.file_path)
         else:
