@@ -266,8 +266,8 @@ class CameraPipeline:
         else:
             video_device, camera_caps, nn_device, nn_caps, dcmipp_sensor, main_postproc = CameraPipeline.setup_camera(width=760, height=568, framerate=30)
             device = f"/dev/{nn_device}"
-            src = f"v4l2src device={device} ! videorate ! {nn_caps} ! videoconvert"
-            print(f"Using ribbon camera: device={device}, caps={nn_caps}")
+            src = f"v4l2src device={nn_device} ! videorate ! {nn_caps} ! videoconvert"
+            print(f"Using ribbon camera: device={nn_device}, caps={nn_caps}")
 
         print("src=", src)
         # Text overlay configuration
@@ -361,7 +361,19 @@ class CameraPipeline:
         if debug:
             print(f"Debug info: {debug}")
 
+# temp hack function
+def parse_credentials(f: Path):
+    ret = {}
+    with open(f, 'r') as f:
+        for line in f:
+            line = line.strip()
+            if line.startswith('export '):
+                var, value = line[len('export ')].split('=', 1)
+                ret[var] = value.strip('"').strip("'")
+    return ret
 
+    # Example: Access a variable
+    print(AWS_DEFAULT_REGION)  # Outputs: us-east-1
 def print_credentials(provider: AwsCredentialsProvider):
     """
     Example function to print AWS credentials in a format suitable for setting environment variables
