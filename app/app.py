@@ -4,6 +4,7 @@
 # Note debug GST: GST_DEBUG=v4l2*:5
 
 import os
+import queue
 import random
 import shutil
 import subprocess
@@ -258,6 +259,7 @@ class CameraPipeline:
         self.last_time = time.perf_counter()
         self.frame_count = 0
         self.show_window = show_window
+        self.webrtc_queue = queue.Queue(maxsize=1)
 
         # USB camera uses MJPG and needs jpegdec
         # Ribbon camera (MIPI CSI) uses setup_camera.sh to configure media pipeline
@@ -318,6 +320,10 @@ class CameraPipeline:
 
         # Process frame
         img = Image.frombytes("RGB", (width, height), map_info.data)
+        try:
+            self.webrtc_queue.put_nowait(np.array(img))
+        except queue.Full:
+            pass
         self.model.inference(img)
         # Update frame counter and calculate FPS
         self.frame_count += 1
@@ -523,10 +529,27 @@ def main():
     parser.add_argument('-m', '--model-file', default=None, help='model to be executed.')
     parser.add_argument('-t', '--reporting-interval', default=2, help='IoTConnect reporting interval in seconds')
     parser.add_argument('-u', '--usb', action='store_true', help='Try use USB camera (typically MJPG on /dev/video7).')
+    parser.add_argument('-c', '--channel-arn', required=True, help='KVS signaling channel ARN for WebRTC streaming.')
     args = parser.parse_args()
 
     stai_inference = StAiInference(args.model_file)
     camera = CameraPipeline(stai_inference, use_usb_camera=args.usb, show_window=True)  # Set to False to disable window
+
+    # Launch WebRTC streaming in a background thread (after camera pipeline is set up)
+    from app_webrtc import start_webrtc
+    threading.Thread(
+        target=start_webrtc,
+        args=(
+            os.environ['AWS_DEFAULT_REGION'],
+            args.channel_arn,
+            os.environ['AWS_ACCESS_KEY_ID'],
+            os.environ['AWS_SECRET_ACCESS_KEY'],
+            os.environ.get('AWS_SESSION_TOKEN'),
+            camera.webrtc_queue
+        ),
+        daemon=True
+    ).start()
+
     loop = GLib.MainLoop()
 
     try:
