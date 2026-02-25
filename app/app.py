@@ -35,6 +35,7 @@ from avnet.iotconnect.sdk.lite.client import KvsClient, AwsCredentialsProvider, 
 
 APP_VERSION="1.0.0"
 
+verbose=True
 
 
 @dataclass
@@ -190,6 +191,7 @@ class StAiInference:
             return stai_model
 
     def inference(self, input_image):
+        global verbose
         with self.lock:
             input_data = np.expand_dims(input_image, axis=0)
             self.stai_model.set_input(0, input_data)
@@ -205,15 +207,18 @@ class StAiInference:
             for i in top_k:
                 # if "non-tfhub" model is passed with 1000 classes
                 class_name = self.labels[i + offset]
-                if self.output_tensor_dtype == np.uint8:
-                    pass # print('# {:08.6f}: {}'.format(float(results[i] / 255.0), class_name), end='')
-                else:
-                    pass # print('# {:08.6f}: {}'.format(float(results[i]), class_name), end='')
+                if verbose:
+                    if self.output_tensor_dtype == np.uint8:
+                        print('# {:08.6f}: {}'.format(float(results[i] / 255.0), class_name), end='')
+                    else:
+                        print('# {:08.6f}: {}'.format(float(results[i]), class_name), end='')
+
+            if verbose:
+                print("")  # end the line after printing all classes
             stai_ic_telemetry.class1 = self.labels[top_k[0] + offset]
             stai_ic_telemetry.class2 = self.labels[top_k[1] + offset]
             stai_ic_telemetry.confidence1 = float(round(results[top_k[0]] * 100, 2))
             stai_ic_telemetry.confidence2 = float(round(results[top_k[1]] * 100, 2))
-            # print("")
 
 class CameraPipeline:
     @staticmethod
@@ -374,7 +379,8 @@ class CameraPipeline:
             stai_ic_telemetry.fps = fps
             self.frame_count = 0
             self.last_time = now
-            print(f"FPS: {fps}")
+            if verbose:
+                print(f"FPS: {fps}")
 
         buffer.unmap(map_info)
         return Gst.FlowReturn.OK
@@ -403,8 +409,10 @@ class CameraPipeline:
             img = Image.fromarray(frame)
             img.save("/tmp/output_image.jpg")
             upload_screencap(
-                label=stai_ic_telemetry.class1,
-                confidence=stai_ic_telemetry.confidence1,
+                label1=stai_ic_telemetry.class1,
+                confidence1=stai_ic_telemetry.confidence1,
+                label2=stai_ic_telemetry.class2,
+                confidence2=stai_ic_telemetry.confidence2,
                 fps=stai_ic_telemetry.fps,
                 local_path="/tmp/output_image.jpg"
             )
@@ -516,16 +524,20 @@ def on_ota(msg: C2dOta):
         iotconnect_client.send_ota_ack(msg, C2dAck.OTA_DOWNLOAD_DONE)
 
 
-def upload_screencap(label: str, confidence: float, fps: int, local_path: str = Path(__file__).parent / '/tmp/capture.jpg'):
-    print("Account S3 Buckets:")
-    print(s3_client.get_buckets())
-    print("S3 Credentials:")
-    print_credentials(s3_client)
+def upload_screencap(label1: str, confidence1: float, label2: str, confidence2: float, fps: int, local_path: str = Path(__file__).parent / '/tmp/capture.jpg'):
+    global verbose
+    if verbose:
+        print("Account S3 Buckets:")
+        print(s3_client.get_buckets())
+        print("S3 Credentials:")
+        print_credentials(s3_client)
     s3_custom_data = S3CustomData()
     # Upload the file into the default bucket with some custom metadata
     # The "cf" object is special and will be displayed by /IOTCONNECT UI
-    s3_custom_data.cf.classification = label
-    s3_custom_data.cf.confidence = confidence
+    s3_custom_data.cf.classification1 = label1
+    s3_custom_data.cf.confidence1 = confidence1
+    s3_custom_data.cf.classification1 = label2
+    s3_custom_data.cf.confidence1 = confidence2
     s3_custom_data.cf.model_name = stai_inference.model_file
     s3_custom_data.cf.fps = fps
 
@@ -581,14 +593,16 @@ def iotconnect_application_loop():
 
 
 def main():
-    global stai_inference
+    global stai_inference, verbose
     parser = ArgumentParser()
     parser.add_argument('-m', '--model-file', default=None, help='model to be executed.')
     parser.add_argument('-t', '--reporting-interval', default=2, help='IoTConnect reporting interval in seconds')
     parser.add_argument('-u', '--usb', action='store_true', help='Try use USB camera (typically MJPG on /dev/video7).')
+    parser.add_argument('-v', '--verbose', action='store_true', help='Enable verbose logging for inferencing etc.')
     parser.add_argument('-c', '--channel-arn', required=True, help='KVS signaling channel ARN for WebRTC streaming.')
     args = parser.parse_args()
 
+    verbose=args.verbose
     stai_inference = StAiInference(args.model_file)
     camera = CameraPipeline(stai_inference, use_usb_camera=args.usb, show_window=True)  # Set to False to disable window
 
