@@ -259,25 +259,6 @@ class CameraPipeline:
 
         return video_device_prev, camera_caps_prev, video_device_nn, camera_caps_nn, dcmipp_sensor, aux_postproc
 
-    @staticmethod
-    def init_isp(dcmipp_sensor, aux_postproc):
-        """
-        Configure ISP gamma, white balance, and auto-exposure.
-        Without this, the DCMIPP pipeline fails to allocate buffers on cold boot.
-        Based on ST's stai_mpu_image_classification.py update_isp_config().
-        """
-        if dcmipp_sensor != "imx335" or not aux_postproc:
-            return
-        isp_file = "/usr/local/demo/bin/dcmipp-isp-ctrl"
-        if not os.path.exists(isp_file):
-            print(f"ISP control file {isp_file} not found, skipping ISP init")
-            return
-        print("Initializing ISP configuration...")
-        subprocess.run(f"v4l2-ctl -d {aux_postproc} -c gamma_correction=0", shell=True)
-        subprocess.run(f"v4l2-ctl -d {aux_postproc} -c gamma_correction=1", shell=True)
-        subprocess.run(f"{isp_file} -i0", shell=True)
-        subprocess.run(f"{isp_file} -g > /dev/null", shell=True)
-
     def __init__(self, model, use_usb_camera=False, show_window=True):
         self.model = model
         self.last_time = time.perf_counter()
@@ -285,6 +266,14 @@ class CameraPipeline:
         self.show_window = show_window
         self.webrtc_queue = queue.Queue(maxsize=1)
         self.pipelines = []
+
+        # for whitebalance/gamma control for MIPI camera
+        self.aux_postproc = None
+        self.dcmipp_sensor = None
+        self.isp_initialized = False
+        # independent counter to trigger ISP config update every N frames
+        # start with negative (modulo high) counter and waste a few frames to avoid timing errors
+        self.cpt_frame_counter = -2
 
         text_overlay = (
             "textoverlay name=overlay "
@@ -309,10 +298,10 @@ class CameraPipeline:
         else:
             # MIPI: two separate V4L2 devices from setup_camera.sh
             prev_device, prev_caps, nn_device, nn_caps, dcmipp_sensor, aux_postproc = CameraPipeline.setup_camera(width=760, height=568, framerate=30)
+            self.aux_postproc = aux_postproc
+            self.dcmipp_sensor = dcmipp_sensor
             print(f"MIPI preview: device=/dev/{prev_device}, caps={prev_caps}")
             print(f"MIPI NN:      device=/dev/{nn_device}, caps={nn_caps}")
-
-            CameraPipeline.init_isp(dcmipp_sensor, aux_postproc)
 
             # NN pipeline: dedicated device, direct to appsink
             self.pipeline_nn = Gst.parse_launch(
@@ -337,8 +326,8 @@ class CameraPipeline:
                 )
 
         # Connect appsinks
-        self.pipeline_nn.get_by_name("nn_sink").connect("new-sample", self.on_nn_frame)
         self.pipeline_preview.get_by_name("preview_sink").connect("new-sample", self.on_preview_frame)
+        self.pipeline_nn.get_by_name("nn_sink").connect("new-sample", self.on_nn_frame)
         self.overlay = self.pipeline_preview.get_by_name("overlay")
 
         # Start preview pipeline first, then NN — DCMIPP requires this order
@@ -352,10 +341,38 @@ class CameraPipeline:
             bus.connect("message::warning", self.on_warning)
             self.pipelines.append(p)
 
+    def update_isp_config(self):
+        """
+        Configure ISP gamma, white balance, and auto-exposure.
+        Call this on new frame periodically.
+        Based on ST's stai_mpu_image_classification.py update_isp_config().
+        """
+        if self.dcmipp_sensor != "imx335" or not self.aux_postproc:
+            # Ignore USB camera and other unknown cameras
+            return
+        isp_file = "/usr/local/demo/bin/dcmipp-isp-ctrl"
+        if not os.path.exists(isp_file):
+            print(f"ISP control file {isp_file} not found, skipping ISP init")
+            return
+        if not self.isp_initialized:
+            print(f"Initializing ISP configuration...")
+            subprocess.run(f"v4l2-ctl -d {self.aux_postproc} -c gamma_correction=0", shell=True)
+            subprocess.run(f"v4l2-ctl -d {self.aux_postproc} -c gamma_correction=1", shell=True)
+            self.isp_initialized = True
+        print("Updating ISP configuration...")
+        subprocess.run(f"{isp_file} -i0", shell=True)
+        subprocess.run(f"{isp_file} -g > /dev/null", shell=True)
+
     def on_nn_frame(self, sink):
         sample = sink.emit("pull-sample")
         if not sample:
             return Gst.FlowReturn.ERROR
+
+        if self.cpt_frame_counter == 0:
+            self.update_isp_config() # do this every so often when using MIPI camera
+        self.cpt_frame_counter = (self.cpt_frame_counter + 1) % 60
+
+
         buffer = sample.get_buffer()
         caps = sample.get_caps()
         width, height = caps.get_structure(0).get_value("width"), caps.get_structure(0).get_value("height")
@@ -390,6 +407,7 @@ class CameraPipeline:
         sample = sink.emit("pull-sample")
         if not sample:
             return Gst.FlowReturn.ERROR
+
         buffer = sample.get_buffer()
         caps = sample.get_caps()
         width, height = caps.get_structure(0).get_value("width"), caps.get_structure(0).get_value("height")
