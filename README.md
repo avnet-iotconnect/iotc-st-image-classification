@@ -385,11 +385,22 @@ dencies/liblog4cplus-CMakeLists.txt
 ```bash
 git clone https://github.com/awslabs/amazon-kinesis-video-streams-producer-sdk-cpp.git
 cd amazon-kinesis-video-streams-producer-sdk-cpp
+
+```
+
+On arm EC2:
+```commandline
+sudo apt-get update
+sudo apt-get install -y build-essential cmake make pkg-config m4
+sudo apt-get install -y libssl-dev libcurl4-openssl-dev libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev liblog4cplus-dev
+```
+```bash
 mkdir build
 cd build
 cmake \
   -BUILD_GSTREAMER_PLUGIN=ON \
   -DPARALLEL_BUILD=OFF \
+  -DBUILD_DEPENCENCIES=OFF \
   ..
 ```
 
