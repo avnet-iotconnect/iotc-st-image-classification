@@ -1,0 +1,29 @@
+======================================================================
+Testing TensorFlow Official Pre-Quantized Models
+======================================================================
+
+======================================================================
+Model: tf_mobilenet_v2_quant
+======================================================================
+  ERROR: HTTP Error 403: Forbidden
+
+======================================================================
+Model: tf_mobilenet_v1_quant
+======================================================================
+  ERROR: HTTP Error 403: Forbidden
+
+======================================================================
+Reference: ST Model
+======================================================================
+  Operations: {'QUANTIZE': 1, 'CONV_2D': 35, 'DEPTHWISE_CONV_2D': 17, 'MINIMUM': 17, 'RELU': 17, 'PAD': 4, 'ADD': 10, 'MEAN': 1, 'FULLY_CONNECTED': 1, 'SOFTMAX': 1, 'DEQUANTIZE': 1, 'DELEGATE': 19}
+  Has MINIMUM: 17
+  Has RELU: 17
+
+  Inference on water bottle image:
+    #1: 0.0859 [ 898] washer
+    #2: 0.0781 [ 737] pool table
+    #3: 0.0703 [ 653] military uniform
+    #4: 0.0312 [ 920] street sign
+    #5: 0.0273 [ 704] park bench
+
+Results written to: /avnet/iotc-st-image-classification/experiments/model-garden/tf_official_models_test.txt

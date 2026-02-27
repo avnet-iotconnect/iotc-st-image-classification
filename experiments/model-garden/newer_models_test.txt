@@ -1,0 +1,86 @@
+======================================================================
+Testing Newer Models for Per-Tensor Quantization
+======================================================================
+These models are designed with edge deployment in mind:
+- MobileNetV3: Successor to V2, uses hard-swish activation
+- EfficientNetV2: Modern efficient architecture
+======================================================================
+
+Calibration images: (98, 224, 224, 3)
+
+======================================================================
+Model: MobileNetV3Small
+======================================================================
+  Loading model...
+  Input shape: (None, None, None, 3)
+  Output shape: (None, 1000)
+  Converting to TFLite (per-tensor)...
+
+  Operations: {'QUANTIZE': 1, 'MUL': 19, 'ADD': 7, 'CONV_2D': 43, 'HARD_SWISH': 19, 'PAD': 4, 'DEPTHWISE_CONV_2D': 11, 'MEAN': 10, 'RESHAPE': 1, 'SOFTMAX': 1, 'DEQUANTIZE': 1, 'DELEGATE': 21}
+  Has MINIMUM: 0
+  Has RELU: 0
+  Has HARD_SWISH: 19
+
+  Inference test:
+  ERROR: Cannot set tensor: Dimension mismatch. Got 224 but expected 1 for dimension 1 of input 0.
+  Traceback (most recent call last):
+  File "/avnet/iotc-st-image-classification/experiments/model-garden/test_newer_models.py", line 118, in test_model
+    top5_idx, top5_conf = test_inference(str(output_path), TEST_IMAGE, labels)
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/avnet/iotc-st-image-classification/experiments/model-garden/test_newer_models.py", line 56, in test_inference
+    interp.set_tensor(in_details['index'], tensor)
+  File "/avnet/iotc-st-image-classification/experiments/.venv/lib/python3.12/site-packages/tensorflow/lite/python/interpreter.py", line 764, in set_tensor
+    self._interpreter.SetTensor(tensor_index, value)
+ValueError: Cannot set tensor: Dimension mismatch. Got 224 but expected 1 for dimension 1 of input 0.
+
+
+======================================================================
+Model: MobileNetV3Large
+======================================================================
+  Loading model...
+  Input shape: (None, None, None, 3)
+  Output shape: (None, 1000)
+  Converting to TFLite (per-tensor)...
+  ERROR: failed to create XNNPACK runtimeNode number 131 (TfLiteXNNPackDelegate) failed to prepare.
+  Traceback (most recent call last):
+  File "/avnet/iotc-st-image-classification/experiments/model-garden/test_newer_models.py", line 110, in test_model
+    ops = count_ops(str(output_path))
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/avnet/iotc-st-image-classification/experiments/model-garden/test_newer_models.py", line 23, in count_ops
+    interp.allocate_tensors()
+  File "/avnet/iotc-st-image-classification/experiments/.venv/lib/python3.12/site-packages/tensorflow/lite/python/interpreter.py", line 554, in allocate_tensors
+    return self._interpreter.AllocateTensors()
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+RuntimeError: failed to create XNNPACK runtimeNode number 131 (TfLiteXNNPackDelegate) failed to prepare.
+
+
+======================================================================
+Model: EfficientNetV2B0
+======================================================================
+  Loading model...
+  Input shape: (None, 224, 224, 3)
+  Output shape: (None, 1000)
+  Converting to TFLite (per-tensor)...
+
+  Operations: {'QUANTIZE': 1, 'MUL': 73, 'SUB': 1, 'CONV_2D': 75, 'LOGISTIC': 71, 'ADD': 15, 'DEPTHWISE_CONV_2D': 16, 'MEAN': 17, 'SHAPE': 16, 'STRIDED_SLICE': 16, 'PACK': 16, 'RESHAPE': 16, 'FULLY_CONNECTED': 1, 'SOFTMAX': 1, 'DEQUANTIZE': 1, 'DELEGATE': 18}
+  Has MINIMUM: 0
+  Has RELU: 0
+  Has HARD_SWISH: 0
+
+  Inference test:
+    #1: 0.9062 [ 898] water bottle <<<
+    #2: 0.0156 [ 737] pop bottle
+    #3: 0.0078 [ 680] nipple
+    #4: 0.0039 [ 767] rubber eraser
+    #5: 0.0039 [ 899] water jug
+
+  Correct result: YES ✓
+
+======================================================================
+SUMMARY
+======================================================================
+  MobileNetV3Small: ✗ FAILS
+  MobileNetV3Large: ✗ FAILS
+  EfficientNetV2B0: ✓ WORKS
+
+Results written to: /avnet/iotc-st-image-classification/experiments/model-garden/newer_models_test.txt

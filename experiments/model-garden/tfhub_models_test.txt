@@ -1,0 +1,76 @@
+======================================================================
+Testing TFHub Models for Unfused Operations
+======================================================================
+Calibration images: (98, 224, 224, 3)
+
+======================================================================
+Model: tfhub_mnv2_classification_v4
+URL: https://tfhub.dev/google/tf2-preview/mobilenet_v2/classification/4
+======================================================================
+  Loading model...
+  Output shape: (None, 1001)
+  Converting to TFLite (per-tensor)...
+
+  Operations: {'QUANTIZE': 1, 'MUL': 1, 'SUB': 1, 'CONV_2D': 36, 'DEPTHWISE_CONV_2D': 17, 'ADD': 10, 'AVERAGE_POOL_2D': 1, 'RESHAPE': 1, 'DEQUANTIZE': 1, 'DELEGATE': 2}
+  Has MINIMUM: 0
+  Has RELU: 0
+  Has RELU6: 0
+  Unfused activations: NO ✗
+
+  Inference test:
+    #1: 7.6192 [ 773] safety pin <<<
+    #2: 6.6848 [ 785] screwdriver
+    #3: 6.3972 [ 696] padlock
+    #4: 6.1816 [ 846] syringe
+    #5: 5.6785 [ 697] paintbrush
+
+  Correct result: NO ✗
+
+======================================================================
+Model: tfhub_mnv2_classification_v5
+URL: https://tfhub.dev/google/imagenet/mobilenet_v2_100_224/classification/5
+======================================================================
+  Loading model...
+  Output shape: (None, 1001)
+  Converting to TFLite (per-tensor)...
+
+  Operations: {'QUANTIZE': 1, 'MUL': 1, 'SUB': 1, 'CONV_2D': 36, 'DEPTHWISE_CONV_2D': 17, 'ADD': 10, 'AVERAGE_POOL_2D': 1, 'RESHAPE': 1, 'DEQUANTIZE': 1, 'DELEGATE': 2}
+  Has MINIMUM: 0
+  Has RELU: 0
+  Has RELU6: 0
+  Unfused activations: NO ✗
+
+  Inference test:
+    #1: 6.5762 [ 514] cornet <<<
+    #2: 6.3414 [ 508] combination lock
+    #3: 6.0282 [ 567] French horn
+    #4: 5.5585 [ 712] perfume
+    #5: 5.4802 [ 696] padlock
+
+  Correct result: NO ✗
+
+======================================================================
+Model: kaggle_mnv2_classification
+URL: https://www.kaggle.com/models/google/mobilenet-v2/TensorFlow2/100-224-classification/2
+======================================================================
+  Loading model...
+  Output shape: (None, 1001)
+  Converting to TFLite (per-tensor)...
+
+  Operations: {'QUANTIZE': 1, 'MUL': 1, 'SUB': 1, 'CONV_2D': 36, 'DEPTHWISE_CONV_2D': 17, 'ADD': 10, 'AVERAGE_POOL_2D': 1, 'RESHAPE': 1, 'DEQUANTIZE': 1, 'DELEGATE': 2}
+  Has MINIMUM: 0
+  Has RELU: 0
+  Has RELU6: 0
+  Unfused activations: NO ✗
+
+  Inference test:
+    #1: 7.6192 [ 773] safety pin <<<
+    #2: 6.6848 [ 785] screwdriver
+    #3: 6.3972 [ 696] padlock
+    #4: 6.1816 [ 846] syringe
+    #5: 5.6785 [ 697] paintbrush
+
+  Correct result: NO ✗
+
+
+Results written to: /avnet/iotc-st-image-classification/experiments/model-garden/tfhub_models_test.txt
