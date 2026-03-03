@@ -312,6 +312,7 @@ You can install the [stedgeai](https://wiki.stmicroelectronics.cn/stm32mpu/wiki/
 tool and convert your model to .nb format like this:
 ```bash
 f=quantized-pc
+cd models
 stedgeai generate -m $f.tflite --target stm32mp25
 mv stm32ai_output/$f.nb .
 rm -rf stm32ai_*
