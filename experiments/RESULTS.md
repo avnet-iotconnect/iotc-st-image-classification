@@ -179,9 +179,82 @@ experiments/
     └── check_classes.py    # Output dimension check
 ```
 
+## Phase 2: Model Candidate Search (Feb 2026)
+
+### Goal
+Find a model that both (a) survives per-tensor quantization AND (b) runs fast on the ST NPU.
+EfficientNetV2B0 works but is slow: 27ms / 75% NPU (Swish→LOGISTIC+MUL falls to GPU).
+
+### Per-Tensor Quantization Results (PC-side accuracy)
+
+| Model | Size | NPU-friendly Ops | GPU-fallback Ops | Accurate? |
+|-------|------|-------------------|-------------------|-----------|
+| MobileNetV1 | 4.1M | 87% | 3% (STRIDED_SLICE:1) | ❌ NO |
+| MobileNetV2 | 3.4M | **97%** | **0%** | ❌ NO |
+| ResNet50 | 24.5M | **97%** | **0%** | ❌ NO |
+| NASNetMobile | 5.3M | 92% | 1% (STRIDED_SLICE:4, MUL:4) | ❌ NO |
+| DenseNet121 | 7.8M | 79% | 19% (MUL:62) | ❌ NO |
+| EfficientNetV2B0 | 7.4M | ~75% | ~25% (LOGISTIC+MUL) | ✅ YES |
+
+**Key observation**: ALL models except EfficientNetV2B0 fail per-tensor quantization accuracy
+on the PC-side TFLite interpreter. This confirms the problem is in TF2's per-tensor quantizer
+itself, not specific to MobileNetV2's architecture or op fusion.
+
+EfficientNetV2B0 survives because Swish activation (LOGISTIC×input) creates natural
+breakpoints in the quantization graph that prevent error accumulation — but those same
+LOGISTIC+MUL ops are what make it slow on the NPU.
+
+### NPU Benchmark Results (on STM32MP257F-DK)
+
+For reference, TFLite models were also benchmarked on the board via VX-delegate.
+Speed was never the issue — **accuracy** is. These benchmarks just confirm expected behavior.
+
+| Model (TFLite via VX-delegate) | Inference Time (ms) | CPU % | GPU % | NPU % | Peak RAM (MB) |
+|-------------------------------|---------------------|-------|-------|-------|---------------|
+| mobilenetv2-pt.tflite | 10.94 | 0.0 | 8.76 | 91.24 | 93.47 |
+| mobilenetv1-pt.tflite | FAILED VX-delegate, CPU fallback | 161.11 | 100.0 | 0 | 37.65 |
+| efficientnetv2-pt.nb (reference) | 27.46 | 0.0 | 24.73 | 75.27 | 27.52 |
+| ST mobilenet_v2 PT .nb (reference) | 10.38 | 0.0 | 7.78 | 92.22 | 23.69 |
+
+MobileNetV2 runs at the expected ~10ms on the NPU. The problem is that the per-tensor
+quantized weights are garbage — the NPU runs bad math fast, it doesn't fix it.
+
+### Conclusion from Phase 2
+
+**No better candidate model was found.** The per-tensor quantization accuracy failure
+is systemic in TF2's quantizer — it affects ALL models tested, not just MobileNetV2.
+EfficientNetV2B0 remains the only model that survives, likely because Swish activation
+creates natural quantization breakpoints, but those same ops (LOGISTIC+MUL) cause the
+27ms / 75% NPU performance penalty.
+
+### Remaining Options
+1. Accept EfficientNetV2B0 at 27ms (15fps) 
+2. Try ONNX quantization path to bypass TF2's quantizer entirely
+3. Contact ST for their quantization recipe
+4. Explore TF1 environment for MobileNetV2 quantization
+
+### Files Created
+```
+experiments/
+├── quantize_candidates.py        # Multi-model quantization + op analysis
+├── test_model_candidates.py      # Earlier version with more models
+├── test_onnx_quantization.py     # ONNX quantization path (not yet tested)
+├── candidate-models/
+│   ├── mobilenetv1-pt.tflite     # MobileNetV1 per-tensor
+│   ├── mobilenetv2-pt.tflite     # MobileNetV2 per-tensor ← 10.94ms on NPU!
+│   ├── resnet50-pt.tflite        # ResNet50 per-tensor (pending benchmark)
+│   └── nasnetmobile-pt.tflite    # NASNetMobile per-tensor (pending benchmark)
+```
+
 ## Conclusion
 
 The per-tensor quantization failure is caused by **operation fusion** in modern TFLite 
 converters, NOT by calibration data, preprocessing, or model weights. ST's working 
 model was created with a pipeline that preserves unfused activations, likely using 
 TF1 tools or custom ST tooling.
+
+**Update (Feb 2026)**: The problem extends beyond MobileNetV2 — ALL tested Keras models
+(MobileNetV1, ResNet50, DenseNet121, NASNetMobile) fail per-tensor accuracy through TF2's
+converter. Only EfficientNetV2B0 survives, but at the cost of NPU performance (27ms vs 10ms
+due to Swish→GPU fallback). No better candidate model was found.
+
