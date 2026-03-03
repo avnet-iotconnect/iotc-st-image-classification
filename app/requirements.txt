@@ -14,4 +14,7 @@ PyGObject
 # for Viewer
 # opencv-python==4.10.*
 
+# for button events
+evdev
+
 iotconnect-sdk-lite[aws-s3]

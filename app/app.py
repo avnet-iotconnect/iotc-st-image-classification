@@ -5,16 +5,22 @@
 
 import os
 import queue
-import random
 import shutil
 import subprocess
 import sys
 import tempfile
 import threading
 import time
+
+# for buttons
+import evdev
+import selectors
+
 from dataclasses import dataclass, asdict, field
 from pathlib import Path
 from typing import Optional
+
+
 
 import gi
 
@@ -275,6 +281,8 @@ class CameraPipeline:
         # start with negative (modulo high) counter and waste a few frames to avoid timing errors
         self.cpt_frame_counter = -2
 
+        self.button_event_handler = ButtonHandler()
+
         text_overlay = (
             "textoverlay name=overlay "
             "text=\"Camera Stream\" "
@@ -421,7 +429,7 @@ class CameraPipeline:
         except queue.Full:
             pass
 
-        if s3_upload_triggered:
+        if s3_upload_triggered or (len(self.button_event_handler.get_button_press_events()) > 0):
             s3_upload_triggered = False
             print("Uploading screencap to S3...")
             img = Image.fromarray(frame)
@@ -449,6 +457,31 @@ class CameraPipeline:
         print(f"GStreamer Warning: {warn}")
         if debug:
             print(f"Debug info: {debug}")
+
+class ButtonHandler:
+    BTN_1 = 'BTN_1'
+    BTN_2 = 'BTN_2'
+
+    def __init__(self):
+        self.device = evdev.InputDevice('/dev/input/event0')
+        self.button_press_selector = selectors.DefaultSelector()
+        self.button_press_selector.register(self.device, selectors.EVENT_READ)
+
+    def get_button_press_events(self):
+        ret = []
+        # Check for pending button events
+        for key, mask in self.button_press_selector.select(timeout=0):
+            if key.fileobj == self.device:
+                for event in self.device.read():
+                    if event.type == evdev.ecodes.EV_KEY:
+                        if event.code == evdev.ecodes.BTN_1 and event.value == 1:
+                            print("BTN_1 pressed")
+                            ret.append(self.__class__.BTN_1)
+                        if event.code == evdev.ecodes.BTN_2 and event.value == 1:
+                            print("BTN_2 pressed")
+                            ret.append(self.__class__.BTN_2)
+        return ret
+
 
 # temp hack function
 def parse_credentials(f: Path):
