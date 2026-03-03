@@ -413,5 +413,20 @@ pycairo
 PyGObject
 ```
 
+# NOTES on ST Quantization:
+
+Explained:
+https://github.com/STMicroelectronics/stm32ai-modelzoo-services/blob/aefd29da879b607791b36a5a3977097432fbe633/pose_estimation/docs/README_OVERVIEW.md#L395-L397
+
+Quantizer:
+if self.cfg.quantization.granularity == 'per_tensor' and self.cfg.quantization.optimize:
+https://github.com/STMicroelectronics/stm32ai-modelzoo-services/blob/aefd29da879b607791b36a5a3977097432fbe633/pose_estimation/tf/src/quantization/tf_quantizer.py#L118C9-L118C97
+
+Calls this:
+https://github.com/STMicroelectronics/stm32ai-modelzoo-services/blob/main/common/optimization/model_formatting_ptq_per_tensor.py#L534
+
+
+
+
 
 

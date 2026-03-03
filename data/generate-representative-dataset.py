@@ -80,7 +80,8 @@ if len(sys.argv) > 1 and sys.argv[1] is not None:
 
 # Default to efficientnetv2 (raw [0, 255] floats)
 # Change to 'mobilenetv2' for [-1, 1] range or 'tfhub' for [0, 1] range
-model_type = 'efficientnetv2'
+# model_type = 'efficientnetv2'
+model_type = 'mobilenetv2'
 
 print(f"Loading images from {source} for model_type={model_type}...")
 images_np_array, classes_np_array = make_calibration_dataset(source, num_images=500, model_type=model_type)

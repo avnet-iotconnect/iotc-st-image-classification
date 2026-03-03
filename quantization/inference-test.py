@@ -28,7 +28,7 @@ DEFAULT_IMG = "../data/water_bottle_ILSVRC2012_val_00025139.JPEG"
 # 1. Keras / TensorFlow
 # ------------------------------------------------------------------
 def keras_inference_new(model_path=None, image_path=DEFAULT_IMG):
-    model = keras.applications.EfficientNetV2B0(
+    model = keras.applications.MobileNetV2(
         input_shape=(224, 224, 3),
         include_top=True,
         weights='imagenet'
@@ -37,7 +37,7 @@ def keras_inference_new(model_path=None, image_path=DEFAULT_IMG):
     input_tensor = tf.convert_to_tensor(img, dtype=tf.float32)
     input_tensor = tf.expand_dims(input_tensor, axis=0)  # Shape: [1, 224, 224, 3]
     # for efficientnet, we need to keep raw [0, 255] float values, so no scaling is needed
-    # input_tensor = input_tensor / 255.0  # Normalize to [0, 1]
+    input_tensor = input_tensor / 255.0  # Normalize to [0, 1]
 
     preds = model.predict(input_tensor, verbose=0)
     idx = int(np.argmax(preds))
@@ -122,10 +122,3 @@ if __name__ == "__main__":
     idx, conf = keras_inference_new(image_path=img)
     print(f"  index={idx:4d}  confidence={conf:.4f}")
     print(f"{list(classes.IMAGENET2012_CLASSES.values())[idx]}")
-
-
-    # model = tf.keras.applications.MobileNetV2(weights='imagenet')
-    # img = Image.open(DEFAULT_IMG).resize((224, 224))
-    # x = tf.keras.applications.mobilenet_v2.preprocess_input(np.array(img))
-    # pred = model.predict(x[None])
-    # print(pred)

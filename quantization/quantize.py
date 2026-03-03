@@ -98,7 +98,7 @@ def convert_to_tflite_mpx(model, calibration_data_path, per_tensor=True):
 def base_model():
     # EfficientNetV2B0 works with per-tensor quantization (unlike MobileNetV2)
     # See experiments/RESULTS.md for investigation details
-    model = keras.applications.EfficientNetV2B0(
+    model = keras.applications.MobileNetV2(
         input_shape=(224, 224, 3),
         include_top=True,
         weights='imagenet'
@@ -132,6 +132,10 @@ def quantize(args):
 
     out_file_path = os.path.join(args.model_dir, args.output_model)
     print(f"Converting to {out_file_path} per_tensor={str(args.per_tensor)}")
+    if args.per_tensor:
+        print('Optimizing the model with ST\'s model optimization "surgery"...' )
+        from st_optimization.model_formatting_ptq_per_tensor import model_formatting_ptq_per_tensor
+        input_model = model_formatting_ptq_per_tensor(model_origin=input_model)
     tflite_model = convert_to_tflite_mpx(input_model, calibration_data_file, per_tensor=args.per_tensor)
     print("Writing...")
     with open(out_file_path, 'wb') as f:
