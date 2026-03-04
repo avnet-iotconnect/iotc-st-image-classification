@@ -1,13 +1,17 @@
 import os
+
+# Install this package to suppress TF spam
+try:
+    import silence_tensorflow.auto
+except ImportError: pass
+
 import argparse
-
-
 import numpy as np
+import os
 import tensorflow as tf
 import keras
 
 MODEL_INPUT_SIZE = (224, 224)
-
 
 def iotc_ota_send(args, file_path):
     """
@@ -58,7 +62,7 @@ def iotc_ota_send(args, file_path):
     upgrade.publish(firmware_upgrade_guid)
     ota.push_to_device(firmware_upgrade_guid, [device_object.guid])
 
-def convert_to_tflite_mpx(model, calibration_data_path, per_tensor=True):
+def convert_to_tflite(model, calibration_data_path, per_tensor=True):
     def representative_dataset_synthetic():
         print("--- WARNING: USING SYNTHETIC REPRESENTATIVE DATASET ---")
         for _ in range(100):
@@ -76,52 +80,20 @@ def convert_to_tflite_mpx(model, calibration_data_path, per_tensor=True):
     converter.target_spec.supported_ops = [tf.lite.OpsSet.TFLITE_BUILTINS_INT8]
     converter.inference_input_type = tf.uint8
     converter.inference_output_type = tf.float32
-
     converter.representative_dataset = representative_dataset_gen
-
     converter._experimental_disable_per_channel = per_tensor # if per_tensor, then disable
-
-    if per_tensor:
-        # converter._experimental_disable_per_channel_quantization_for_dense_layers = True
-        #
-        # converter.experimental_new_converter = True
-        # converter.experimental_new_quantizer = False
-        # converter.experimental_new_dynamic_range_quantizer = False
-
-        pass # to keep commended out code up there
-
     return converter.convert()
-
-
-def base_model():
-    # EfficientNetV2B0 works with per-tensor quantization (unlike MobileNetV2)
-    # See experiments/RESULTS.md for investigation details
-    model = keras.applications.MobileNetV2(
-        input_shape=(224, 224, 3),
-        include_top=True,
-        weights='imagenet'
-    )
-    model.build((None, 224, 224, 3))
-    return model
 
 def quantize(args):
     if args.input_model is None:
-        input_model = base_model()
-
-        # input_model = qat2()
-        # import tensorflow_hub as hub
-        # url = "https://tfhub.dev/google/tf2-preview/mobilenet_v2/classification/4"
-        # url = "https://tfhub.dev/google/imagenet/mobilenet_v2_100_224/classification/4"
-        # url = "https://tfhub.dev/google/imagenet/mobilenet_v2_100_224/classification/3"
-        # url = "https://tfhub.dev/google/tf2-preview/mobilenet_v2/classification/4"
-        # url = "https://www.kaggle.com/models/google/mobilenet-v2/TensorFlow2/100-224-classification/2"
-        # input_model = tf.keras.Sequential([
-        #     hub.KerasLayer(url, trainable=False),
-        #     keras.layers.Softmax()  # Make it the same as the base model - max to 1.
-        # ])
-
+        default_model = keras.applications.MobileNetV2(
+            input_shape=(224, 224, 3),
+            include_top=True,
+            weights='imagenet'
+        )
+        default_model.build((None, 224, 224, 3))
+        input_model = default_model
         input_model.save(os.path.join(args.model_dir, "base_model.h5"))
-
     else:
         print(f"Using {args.input_model}")
         input_model = keras.models.load_model(os.path.join(args.model_dir, args.input_model))
@@ -129,20 +101,29 @@ def quantize(args):
     calibration_data_file = os.path.join(args.train_data_dir, 'calibration.npz')
 
     out_file_path = os.path.join(args.model_dir, args.output_model)
-    print(f"Converting to {out_file_path} per_tensor={str(args.per_tensor)}")
-    if args.per_tensor:
-        print('Optimizing the model with ST\'s model optimization "surgery"...' )
-        from st_optimization.model_formatting_ptq_per_tensor import model_formatting_ptq_per_tensor
-        input_model = model_formatting_ptq_per_tensor(model_origin=input_model)
-    tflite_model = convert_to_tflite_mpx(input_model, calibration_data_file, per_tensor=args.per_tensor)
-    print("Writing...")
+    # unless forced, apply optimization only for per-channel quantization by default (unless explicitly disabled)
+    optimize = args.force_optimization or (not args.no_optimization and not args.per_channel)
+    if optimize:
+        if not args.per_channel:
+            print("-----------------------------------")
+            print("Warning: You are creating a per-tensor quantized model without applying the ST optimization. "
+                  "Most models like MobileNetV2 will produce a broken converted model as they are not suitable for per-tensor quantization!"
+                  )
+            print("-----------------------------------")
+        else:
+            print("Applying the ST optimization to the model...")
+            from st_optimization.model_formatting_ptq_per_tensor import model_formatting_ptq_per_tensor
+            input_model = model_formatting_ptq_per_tensor(model_origin=input_model)
+    print(f"Converting the model to {"per-channel" if args.per_channel else "per-tensor"} \"{out_file_path}\" with optimization={optimize}...")
+    tflite_model = convert_to_tflite(input_model, calibration_data_file, per_tensor=not args.per_channel)
+    print("Writing the TFLite model...")
     with open(out_file_path, 'wb') as f:
         f.write(tflite_model)
     if args.send_to is not None:
         iotc_ota_send(args, out_file_path)
-    print("Done.")
+    print(f"Converted the model to {"per-channel" if args.per_channel else "per-tensor"} \"{out_file_path}\" with optimization={optimize}")
 
-if __name__ == '__main__':
+def main():
     parser = argparse.ArgumentParser()
 
     # SageMaker-provided arguments
@@ -155,8 +136,12 @@ if __name__ == '__main__':
                         help="Optional model file from model-dir to load into the application. By default a model will be instantiated with Keras")
     parser.add_argument('--output-model', type=str, default="quantized-model.tflite",
                         help="File name to be written for the output model")
-    parser.add_argument('--per-tensor', action="store_true", default=False,
-                        help="Specify this flag to quantize a per-tensor model. Otherwise per-channel model will be created.")
+    parser.add_argument('--per-channel', action="store_true", default=False,
+                        help="Specify this flag to quantize a per-channel model. Otherwise per-tensor model will be created.")
+    parser.add_argument('--no-optimization', action="store_true", default=False,
+                        help="Specify this flag to disable the per-tensor model optimization step.")
+    parser.add_argument('--force-optimization', action="store_true", default=False,
+                        help="Specify this flag to force the optimization on a per-channel model.")
 
     # IoTConnect OTA and user config:
     parser.add_argument('--send-to', type=str, default=None,
@@ -180,3 +165,7 @@ if __name__ == '__main__':
     quantize(args)
 
     print(f"Saved models are at: {args.model_dir}")
+
+
+if __name__ == '__main__':
+    main()

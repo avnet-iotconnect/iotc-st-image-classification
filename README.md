@@ -3,7 +3,7 @@ This is Avnet's IoTConnect Image Classification Demo for STM23 MP2, with AWS Sag
 and OTA updates support.
 
 While MP1 devices can be supported in theory, getting the python packages to install
-can pose an issue due to limited availability of pre-compiled native python packages 
+can be difficult due to limited availability of pre-compiled native python packages 
 for armv7l (vs. the aarch64 for MP2). Therefore, MP1 support is not included in this project.
 
 This project demonstrates how a Tensorflow base model can be converted to TFLite format 
@@ -51,24 +51,13 @@ v4l2-ctl -d /dev/video0 --stream-mmap --stream-count=1 --stream-to=camera.jpg
 
 ## Camera Setup
 
-It is recommended to use a USB Camera that can provide images at a good frame rate.
-For example, any Logitech USB camera should suffice or ST MIPI CSI-2 Cameras supported by this board.  
-
-Ensure to restart the board after plugging in the camera to ensure proper order 
-of camera devices provided by the kernel.
-
-You should verify that your camera appears as /dev/video0. For example:
-``bash
-v4l2-ctl --list-devices
-....
-HD Pro Webcam C920 (usb-482f0000.usb-1.2):
-	/dev/video0
-	/dev/video1
-	/dev/media0
-``
+It is recommended to use the
+[B-CAMS-IMX](https://www.newark.com/stmicroelectronics/b-cams-imx/camera-module-board-image-sensor/dp/13AM6169)
+MIPI CSI-2 camera for this demo.
 
 Useful Read: [STM32MP2 V4L2 camera overview](https://wiki.st.com/stm32mpu/wiki/STM32MP2_V4L2_camera_overview)
 
+USB camera may be used as well. See the section below for more details and troubleshooting the camera setup.
 
 
 ## Software and Device Install Steps
@@ -144,7 +133,7 @@ python3 app.py
 
 # Model Quantization Setup
 
-Quantization should be running on your PC or AWS Sagemaker.
+Quantization can run on eithe your PC or AWS Sagemaker.
 
 The provided code in the [quantization/](quantization) directory can:
 * Quantize a base model to TFLite format suitable for MP2 with Per-Channel or Per-Tensor quantization.
@@ -213,25 +202,56 @@ python3 quantize.py --help
 
 Crate a per-channel and a per-tensor model:
 ```bash
-python3 quantize.py --output-model=quantized-pc.tflite
-python3 quantize.py --output-model=quantized-pt.tflite --per-tensor  
+python3 quantize.py --output-model=quantized-pt.tflite
+python3 quantize.py --output-model=quantized-pc.tflite --per-channel
 ```
 
 > [!NOTE]
-> WIP: While Per-Channel quantized inferences 7x faster on the device
-> we are not able to produce a model that can reliably recognize images.
-> We will be working with ST to find the best way to solve the issue. 
+> WIP: Per-channel quantization is will run slower on the MPx devices
+> but be slightly mor accurate.
+> It is recommended to use the per-tensor quantized models.
 
 Three files will be created in the [models/](models) directory:
 * quantized-pc.tflite: Per-channel quantized model.
 * quantized-pt.tflite: Per-tensor quantized model.
 * base_model.h5: The input model will be saved for reference.
 
-You can transfer these files manually using SCP:
+
+# NBG and ONNX Model Support
+
+You can install the [stedgeai](https://wiki.stmicroelectronics.cn/stm32mpu/wiki/ST_Edge_AI:_Guide_for_STM32MPU)
+tool and convert your model to NBG (.nb) format.
+
+> [!IMPORTANT]
+> The NBG models will start faster and inference significantly faster than any other format.
+> It is recommended to always use this format.
+
+Convert your TFLite models to NBG format with the stedgeai tool:
+
 ```bash
-scp -rp models/*.tflite root@$device_ip:app/
+quantization/stedgeai-convert.sh quantized-pc
+scp models/$f.nb    root@$device_ip:app/
 ```
 
+It is also possible to convert the TFLite model to ONNX format:
+```bash
+pip install tf2onnx
+python -m tf2onnx.convert --opset 16 --tflite models/quantized-pc.tflite --output models/quantized-pc.onnx
+```
+
+We may address this issue in the future, but the ONNX model will run slower than TFLite or an NBG model.
+
+
+## Note about Model Optimization
+
+The ST's model optimization will be running by default when per-channel quantizatioon is used. 
+Without this optimization the per-tensor *most* tflite quantized models will be broken
+whether running on the ST devices or not.
+[
+You can transfer these files manually using SCP with the IP address of your device:
+```bash
+scp -rp models/*.nb root@192.168.38.141:app/
+```
 
 # OTA Support
 
@@ -306,33 +326,32 @@ python3 sagemaker-run.py --output-model=quantized-pc.tflite
 
 Quantization will run on AWS Sagemaker and transfer the model to your PC into the ```models``` directory.
 
-# Further Exploration
+# USB Camera and Troubleshooting
 
-You can install the [stedgeai](https://wiki.stmicroelectronics.cn/stm32mpu/wiki/ST_Edge_AI:_Guide_for_STM32MPU)
-tool and convert your model to .nb format like this:
-```bash
-f=quantized-pc
-cd models
-stedgeai generate -m $f.tflite --target stm32mp25
-mv stm32ai_output/$f.nb .
-rm -rf stm32ai_*
-scp ../models/$f.nb    root@$device_ip:models/
-```
+It is possible to use any UVC USB Camera that can provide images at a good frame rate.
+For example, any Logitech USB camera should suffice.
+However, tweaks may be needed to get USB Cameras working with the application.
+The app may need to be modified to select appropriate /dev/video* device and suitable resolution or frame rate.
 
-It is possible to convert the TFLite model to ONNX format:
-```bash
-pip install tf2onnx
-python -m tf2onnx.convert --opset 16 --tflite models/quantized-pc.tflite --output models/quantized-pc.onnx
-```
+Ensure to restart the board after plugging in the camera to ensure proper order 
+of camera devices provided by the kernel.
 
-We may address this issue in the future, but the ONNX model will run slower than TFLite or an NBG model.
+You should verify that your camera appears as /dev/video7. For example:
+``bash
+v4l2-ctl --list-devices
+....
+HD Pro Webcam C920 (usb-482f0000.usb-1.2):
+	/dev/video0
+	/dev/video1
+	/dev/media0
+``
 
-# Troubleshooting
+Otherwise, the application may need to be modified to select the appropriate device.
 
 The application expects the camera devices to be in certain order. 
-If the USB camera happens to be plugged in on boot, this expectation will be invalidated,
+If the USB camera happens to be plugged in on boot, this expectation may be invalidated,
 and we need to re-order the devices.
-In most cases, unplugging the USB camera nad powering off the device should solve the problem.
+In most cases, unplugging the USB camera nad powering off the device and restarting should solve the problem.
 
 If the application fails to detect the camera, do the following to try reset the state:
 - Remove the USB camera.
@@ -344,8 +363,7 @@ poweroff
 ```
 - Remove the power and plug it back in.
 
-
-# KVS Notes:
+# WIP KVS Notes:
 
 It is possible that a device will reboot during build.
 This may help:
