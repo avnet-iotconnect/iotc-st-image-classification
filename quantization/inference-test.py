@@ -9,12 +9,9 @@ Both return (top-1 index, confidence).
 """
 
 import os
+import sys
 
 import keras
-
-os.environ["TF_USE_LEGACY_KERAS"] = "1"
-
-import sys
 import numpy as np
 import tensorflow as tf
 from PIL import Image
@@ -25,42 +22,22 @@ DEFAULT_IMG = "../data/water_bottle_ILSVRC2012_val_00025139.JPEG"
 
 
 # ------------------------------------------------------------------
-# 1. Keras / TensorFlow
+# 1. Keras (standalone Keras 3) — use this, not tf.keras
 # ------------------------------------------------------------------
-def keras_inference_new(model_path=None, image_path=DEFAULT_IMG):
+def keras_inference(model_path=None, image_path=DEFAULT_IMG):
     model = keras.applications.MobileNetV2(
         input_shape=(224, 224, 3),
         include_top=True,
         weights='imagenet'
     )
     img = Image.open(image_path).convert("RGB").resize(MODEL_INPUT_SIZE)
-    input_tensor = tf.convert_to_tensor(img, dtype=tf.float32)
-    input_tensor = tf.expand_dims(input_tensor, axis=0)  # Shape: [1, 224, 224, 3]
-    # for efficientnet, we need to keep raw [0, 255] float values, so no scaling is needed
-    input_tensor = input_tensor / 255.0  # Normalize to [0, 1]
+    input_tensor = np.array(img, dtype=np.float32)
 
+    # MobileNetV2 expects [-1, 1]
+    input_tensor = (input_tensor / 127.5) - 1.0
+
+    input_tensor = np.expand_dims(input_tensor, 0)  # Shape: [1, 224, 224, 3]
     preds = model.predict(input_tensor, verbose=0)
-    idx = int(np.argmax(preds))
-    conf = float(preds[0, idx])
-    return idx, conf
-
-
-# ------------------------------------------------------------------
-# 1. Keras / TensorFlow
-# ------------------------------------------------------------------
-def keras_inference(model_path=None, image_path=DEFAULT_IMG):
-    """FP32 model: needs pixels scaled to [-1,1] via preprocess_input."""
-    if model_path is None:                     # fresh Keras app
-        model = tf.keras.applications.MobileNetV2(weights="imagenet")
-    else:
-        model = tf.keras.models.load_model(model_path)
-
-    img = Image.open(image_path).convert("RGB").resize(MODEL_INPUT_SIZE)
-    x = tf.keras.applications.mobilenet_v2.preprocess_input(
-        np.array(img, dtype=np.float32))
-    x = np.expand_dims(x, 0)                   # (1,224,224,3)
-
-    preds = model.predict(x, verbose=0)
     idx = int(np.argmax(preds))
     conf = float(preds[0, idx])
     return idx, conf
@@ -84,12 +61,12 @@ def tflite_inference(tflite_path, image_path=DEFAULT_IMG):
     # --- build tensor with correct dtype / shape -------------------
     in_dtype = in_details['dtype']
     if in_dtype == np.uint8 or in_dtype == np.int8:
-        # raw 0-255 pixels
+        # Quantized model: raw 0-255 pixels — the quantization params
+        # bake in the [-1,1] mapping via scale/zero_point
         tensor = img_np.astype(in_dtype)
     elif in_dtype == np.float32 or in_dtype == np.float16:
-        # scale to [-1,1] as the training graph did
-        tensor = tf.keras.applications.mobilenet_v2.preprocess_input(
-            img_np.astype(np.float32))
+        # Float model: MobileNetV2 expects [-1, 1]
+        tensor = (img_np.astype(np.float32) / 127.5) - 1.0
     else:
         raise TypeError(f"Unsupported input dtype {in_dtype}")
 
@@ -119,6 +96,6 @@ if __name__ == "__main__":
         print(f"{list(classes.IMAGENET2012_CLASSES.values())[idx]}")
 
     print("TF / Keras model:")
-    idx, conf = keras_inference_new(image_path=img)
+    idx, conf = keras_inference(image_path=img)
     print(f"  index={idx:4d}  confidence={conf:.4f}")
     print(f"{list(classes.IMAGENET2012_CLASSES.values())[idx]}")

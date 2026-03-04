@@ -1,8 +1,6 @@
 import os
 import argparse
 
-# You may want to uncomment this when using TFHub
-os.environ["TF_USE_LEGACY_KERAS"] = "1"
 
 import numpy as np
 import tensorflow as tf
@@ -126,7 +124,7 @@ def quantize(args):
 
     else:
         print(f"Using {args.input_model}")
-        input_model = tf.keras.models.load_model(os.path.join(args.model_dir, args.input_model))
+        input_model = keras.models.load_model(os.path.join(args.model_dir, args.input_model))
 
     calibration_data_file = os.path.join(args.train_data_dir, 'calibration.npz')
 
