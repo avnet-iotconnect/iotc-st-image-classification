@@ -341,9 +341,9 @@ You should verify that your camera appears as /dev/video7. For example:
 v4l2-ctl --list-devices
 ....
 HD Pro Webcam C920 (usb-482f0000.usb-1.2):
-	/dev/video0
-	/dev/video1
-	/dev/media0
+	/dev/video7
+	/dev/video8
+	/dev/media3
 ``
 
 Otherwise, the application may need to be modified to select the appropriate device.
