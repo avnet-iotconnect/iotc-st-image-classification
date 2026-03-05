@@ -133,7 +133,7 @@ python3 app.py
 
 # Model Quantization Setup
 
-Quantization can run on eithe your PC or AWS Sagemaker.
+Quantization can run on either your PC or AWS Sagemaker.
 
 The provided code in the [quantization/](quantization) directory can:
 * Quantize a base model to TFLite format suitable for MP2 with Per-Channel or Per-Tensor quantization.
@@ -146,12 +146,12 @@ should be made simpler.
 
 An example with bash on Linux:
 ```bash
-python3 -m venv --system-site-packages ~/.venv-staiicdemo
+python3 -m venv --system-site-packages ~/.demo-venv
 ```
 
 With the virtual environment created, activate it, and ensure that it is always activated for the next steps.
 ```bash
-source ~/.venv-staiicdemo/bin/activate
+source ~/.demo-venv/bin/activate
 ```
 
 
@@ -423,7 +423,7 @@ cmake \
   ..
 ```
 
-# python https://github.com/aws-samples/python-samples-for-amazon-kinesis-video-streams-with-webrtc
+got clone https://github.com/aws-samples/python-samples-for-amazon-kinesis-video-streams-with-webrtc webrtc
 
 - Edit and reduce with "whatever is there" (so no version expliclity):
 ```
