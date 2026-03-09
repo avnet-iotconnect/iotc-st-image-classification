@@ -1018,5 +1018,7 @@ IMAGENET2012_CLASSES = OrderedDict(
         "n13054560": "bolete",
         "n13133613": "ear, spike, capitulum",
         "n15075141": "toilet tissue, toilet paper, bathroom tissue",
+        "n99991001": "development board",
+        "n99991002": "stm32-mp135f-dk"
     }
 )
