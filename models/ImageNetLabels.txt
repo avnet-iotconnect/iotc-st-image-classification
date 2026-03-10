@@ -1001,3 +1001,4 @@ ear
 toilet tissue
 development board
 stm32-mp135f-dk
+stm32-mp237f-ev1
