@@ -41,8 +41,6 @@ from avnet.iotconnect.sdk.lite.client import KvsClient, AwsCredentialsProvider, 
 
 APP_VERSION="1.0.0"
 
-IS_TFHUB_MODEL=False
-
 verbose=True
 
 
@@ -130,7 +128,7 @@ class StAiInference:
                  ):
         self.lock = threading.Lock()
         self.output_tensor_dtype = None # Set when loaded
-        self.num_classes = None # Newer models will be 1001 and load We need to handle this.load() will set it
+        self.num_classes = None
 
         self.model_file = model_file
         self.stai_model = self.load(StAiInference.write_or_read_model_file_name(model_file))
@@ -210,12 +208,8 @@ class StAiInference:
             results = np.squeeze(output_data)
             top_k = results.argsort()[-3:][::-1]
 
-            # TFHUB models will have "canvas" at class index 0 and 1001 total.
-            # For those, we have zero offset with index 0 being "background"
-            offset = 1 if not IS_TFHUB_MODEL else 0
             for i in top_k:
-                # if "non-tfhub" model is passed with 1000 classes
-                class_name = self.labels[i + offset]
+                class_name = self.labels[i]
                 if verbose:
                     if self.output_tensor_dtype == np.uint8:
                         print('# {:08.6f}: {}'.format(float(results[i] / 255.0), class_name), end='')
@@ -224,8 +218,8 @@ class StAiInference:
 
             if verbose:
                 print("")  # end the line after printing all classes
-            stai_ic_telemetry.class1 = self.labels[top_k[0] + offset]
-            stai_ic_telemetry.class2 = self.labels[top_k[1] + offset]
+            stai_ic_telemetry.class1 = self.labels[top_k[0]]
+            stai_ic_telemetry.class2 = self.labels[top_k[1]]
             stai_ic_telemetry.confidence1 = float(round(results[top_k[0]] * 100, 2))
             stai_ic_telemetry.confidence2 = float(round(results[top_k[1]] * 100, 2))
 
