@@ -2,3 +2,4 @@ tensorflow>=2.18.0
 keras>=3.0.0
 numpy
 pillow
+rembg[cpu]

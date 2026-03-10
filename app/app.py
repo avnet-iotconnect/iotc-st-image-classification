@@ -41,6 +41,8 @@ from avnet.iotconnect.sdk.lite.client import KvsClient, AwsCredentialsProvider, 
 
 APP_VERSION="1.0.0"
 
+IS_TFHUB_MODEL=False
+
 verbose=True
 
 
@@ -208,8 +210,9 @@ class StAiInference:
             results = np.squeeze(output_data)
             top_k = results.argsort()[-3:][::-1]
 
-            # newer models will have "canvas" at class index 0 and 1001 total.
-            offset = 1 if self.num_classes == 1000 else 0
+            # TFHUB models will have "canvas" at class index 0 and 1001 total.
+            # For those, we have zero offset with index 0 being "background"
+            offset = 1 if not IS_TFHUB_MODEL else 0
             for i in top_k:
                 # if "non-tfhub" model is passed with 1000 classes
                 class_name = self.labels[i + offset]

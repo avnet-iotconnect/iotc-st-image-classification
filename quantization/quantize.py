@@ -6,6 +6,10 @@ try:
 except ImportError: pass
 
 import argparse
+
+# You may want to uncomment this when using TFHub
+os.environ["TF_USE_LEGACY_KERAS"] = "1"
+
 import numpy as np
 import os
 import tensorflow as tf
@@ -93,7 +97,7 @@ def quantize(args):
         )
         default_model.build((None, 224, 224, 3))
         input_model = default_model
-        input_model.save(os.path.join(args.model_dir, "base_model.h5"))
+        input_model.save(os.path.join(args.model_dir, "base_model.keras"))
     else:
         print(f"Using {args.input_model}")
         input_model = keras.models.load_model(os.path.join(args.model_dir, args.input_model))
@@ -104,18 +108,21 @@ def quantize(args):
     # unless forced, apply optimization only for per-channel quantization by default (unless explicitly disabled)
     optimize = args.force_optimization or (not args.no_optimization and not args.per_channel)
     if optimize:
-        if not args.per_channel:
-            print("-----------------------------------")
-            print("Warning: You are creating a per-tensor quantized model without applying the ST optimization. "
-                  "Most models like MobileNetV2 will produce a broken converted model as they are not suitable for per-tensor quantization!"
-                  )
-            print("-----------------------------------")
-        else:
-            print("Applying the ST optimization to the model...")
-            from st_optimization.model_formatting_ptq_per_tensor import model_formatting_ptq_per_tensor
-            input_model = model_formatting_ptq_per_tensor(model_origin=input_model)
+        print("Applying the ST optimization to the model...")
+        from st_optimization.model_formatting_ptq_per_tensor import model_formatting_ptq_per_tensor
+        input_model = model_formatting_ptq_per_tensor(model_origin=input_model)
+
     print(f"Converting the model to {"per-channel" if args.per_channel else "per-tensor"} \"{out_file_path}\" with optimization={optimize}...")
     tflite_model = convert_to_tflite(input_model, calibration_data_file, per_tensor=not args.per_channel)
+
+    # we have to do this warning after conversion as it will get lost in the log spam
+    if not optimize and not args.per_channel:
+        print("-----------------------------------")
+        print("Warning: You are creating a per-tensor quantized model without applying the ST optimization. "
+              "Most models like MobileNetV2 will produce a broken converted model as they are not suitable for per-tensor quantization!"
+              )
+        print("-----------------------------------")
+
     print("Writing the TFLite model...")
     with open(out_file_path, 'wb') as f:
         f.write(tflite_model)
