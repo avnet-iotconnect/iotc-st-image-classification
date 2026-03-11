@@ -202,7 +202,7 @@ class StAiInference:
             input_data = np.expand_dims(input_image, axis=0)
             self.stai_model.set_input(0, input_data)
 
-            self.stai_model.run() # run once for warmup
+            self.stai_model.run()
 
             output_data = self.stai_model.get_output(index=0)
             results = np.squeeze(output_data)

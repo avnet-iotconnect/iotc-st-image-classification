@@ -115,6 +115,10 @@ It will also download pre-quantized model from ST:
 
 The models will perform similarly, but are provided for reference and ease of use for  evaluation.
 
+The sample application is based on [How to run inference using the STAI MPU Python API
+](https://wiki.stmicroelectronics.cn/stm32mpu/wiki/How_to_run_inference_using_the_STAI_MPU_Python_API)
+example on ST wiki
+
 To launch the application on the device, connect with SSH and run these commands at the prompt:
 ```bash
 cd ~/app
