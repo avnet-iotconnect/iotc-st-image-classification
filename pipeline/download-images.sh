@@ -2,7 +2,7 @@
 
 set -e
 
-cd "$(dirname "$0")../data"
+cd "$(dirname "$0")/../data"
 
 # we pick some random images to see if we need to download or prep anything
 
