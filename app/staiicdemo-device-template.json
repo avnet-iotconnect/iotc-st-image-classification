@@ -32,17 +32,17 @@
             "aggregateTypes": []
         },
         {
-            "name": "confidence1",
-            "type": "DECIMAL",
-            "description": "Detected class/label's confidence",
-            "unit": "Percent",
-            "aggregateTypes": []
-        },
-        {
             "name": "class2",
             "type": "STRING",
             "description": "Second-best detected class/label",
             "unit": "",
+            "aggregateTypes": []
+        },
+        {
+            "name": "confidence1",
+            "type": "DECIMAL",
+            "description": "Detected class/label's confidence",
+            "unit": "Percent",
             "aggregateTypes": []
         },
         {

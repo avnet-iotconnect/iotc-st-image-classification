@@ -6,8 +6,8 @@ cd "$(dirname "$0")"
 
 name=$1
 if [ -z "$name" ]; then
-  echo "Usage: $0 <model_name_without_extension>"
-  exit 1
+  echo 'Using the default input model "mobilenetv2-optimized"(.tflite).'
+  name=mobilenetv2-optimized
 fi
 
 echo Converting "$name.tflite" to NBG...

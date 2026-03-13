@@ -2,6 +2,8 @@
 
 set -e
 
+cd "$(dirname "$0")"
+
 if [ -f ~/.aws-env.sh ]; then
   source  ~/.aws-env.sh
 fi

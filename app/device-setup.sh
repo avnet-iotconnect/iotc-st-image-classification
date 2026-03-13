@@ -27,6 +27,8 @@ wget -q -O ImageNetLabels.txt https://storage.googleapis.com/download.tensorflow
 
 wget -q -O mobilenet_v2_1.0_224_int8_per_tensor.nb https://github.com/STMicroelectronics/meta-st-x-linux-ai/raw/refs/heads/main/recipes-samples/image-classification/models/files/mobilenet_v2_1.0_224_int8_per_tensor.nb
 wget -q -O mobilenet_v2_1.0_224_int8_per_tensor.tflite https://github.com/STMicroelectronics/meta-st-x-linux-ai/raw/refs/heads/main/recipes-samples/image-classification/models/files/mobilenet_v2_1.0_224_int8_per_tensor.tflite
+wget -q -O mobilenetv2-finetuned-pc.nb https://downloads.iotconnect.io/ai-data/mobilenet-v2/mobilenetv2-finetuned-pc.nb
+wget -q -O mobilenetv2-finetuned-pc.tflite https://downloads.iotconnect.io/ai-data/mobilenet-v2/mobilenetv2-finetuned-pc.tflite
 
 python3 -m venv --system-site-packages ~/.venv-staiicdemo
 source ~/.venv-staiicdemo/bin/activate

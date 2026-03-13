@@ -141,7 +141,7 @@ def main():
 
     parser.add_argument('--input-model', type=str, default=None,
                         help="Optional model file from model-dir to load into the application. By default a model will be instantiated with Keras")
-    parser.add_argument('--output-model', type=str, default="quantized-model.tflite",
+    parser.add_argument('--output-model', type=str, default="mobilenetv2-optimized.tflite",
                         help="File name to be written for the output model")
     parser.add_argument('--per-channel', action="store_true", default=False,
                         help="Specify this flag to quantize a per-channel model. Otherwise per-tensor model will be created.")
