@@ -3,3 +3,5 @@
 !generate-representative-dataset.py
 !requirements.txt
 !water_bottle_ILSVRC2012_val_00025139.JPEG
+!download-images.sh
+!test-*.jpg
