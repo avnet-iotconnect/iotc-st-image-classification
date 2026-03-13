@@ -262,12 +262,13 @@ class CameraPipeline:
 
         return video_device_prev, camera_caps_prev, video_device_nn, camera_caps_nn, dcmipp_sensor, aux_postproc
 
-    def __init__(self, model, use_usb_camera=False, show_window=True):
+    def __init__(self, model, use_usb_camera=False, show_window=True, webrtc=True):
         self.model = model
         self.last_time = time.perf_counter()
         self.frame_count = 0
         self.show_window = show_window
         self.webrtc_queue = queue.Queue(maxsize=1)
+        self.webrtc = webrtc
         self.pipelines = []
 
         # for whitebalance/gamma control for MIPI camera
@@ -364,7 +365,7 @@ class CameraPipeline:
             subprocess.run(f"v4l2-ctl -d {self.aux_postproc} -c gamma_correction=0", shell=True)
             subprocess.run(f"v4l2-ctl -d {self.aux_postproc} -c gamma_correction=1", shell=True)
             self.isp_initialized = True
-        print("Updating ISP configuration...")
+        # Updating ISP configuration
         subprocess.run(f"{isp_file} -i0", shell=True)
         subprocess.run(f"{isp_file} -g > /dev/null", shell=True)
 
@@ -421,10 +422,11 @@ class CameraPipeline:
             return Gst.FlowReturn.ERROR
 
         frame = np.ndarray(shape=(height, width, 3), dtype=np.uint8, buffer=map_info.data).copy()
-        try:
-            self.webrtc_queue.put_nowait(frame)
-        except queue.Full:
-            pass
+        if self.webrtc:
+            try:
+                self.webrtc_queue.put_nowait(frame)
+            except queue.Full:
+                pass
 
         if s3_upload_triggered or (len(self.button_event_handler.get_button_press_events()) > 0):
             s3_upload_triggered = False
@@ -647,27 +649,28 @@ def main():
     parser.add_argument('-t', '--reporting-interval', default=2, help='IoTConnect reporting interval in seconds')
     parser.add_argument('-u', '--usb', action='store_true', help='Try use USB camera (typically MJPG on /dev/video7).')
     parser.add_argument('-v', '--verbose', action='store_true', help='Enable verbose logging for inferencing etc.')
-    parser.add_argument('-c', '--channel-arn', required=True, help='KVS signaling channel ARN for WebRTC streaming.')
+    parser.add_argument('-c', '--channel-arn', default=None, help='KVS signaling channel ARN for WebRTC streaming.')
     args = parser.parse_args()
 
     verbose=args.verbose
     stai_inference = StAiInference(args.model_file)
-    camera = CameraPipeline(stai_inference, use_usb_camera=args.usb, show_window=True)  # Set to False to disable window
+    camera = CameraPipeline(stai_inference, use_usb_camera=args.usb, show_window=True, webrtc=(args.channel_arn is not None))  # Set to False to disable window
 
     # Launch WebRTC streaming in a background thread (after camera pipeline is set up)
-    from app_webrtc import start_webrtc
-    threading.Thread(
-        target=start_webrtc,
-        args=(
-            os.environ['AWS_DEFAULT_REGION'],
-            args.channel_arn,
-            os.environ['AWS_ACCESS_KEY_ID'],
-            os.environ['AWS_SECRET_ACCESS_KEY'],
-            os.environ.get('AWS_SESSION_TOKEN'),
-            camera.webrtc_queue
-        ),
-        daemon=True
-    ).start()
+    if args.channel_arn is not None:
+        from app_webrtc import start_webrtc
+        threading.Thread(
+            target=start_webrtc,
+            args=(
+                os.environ['AWS_DEFAULT_REGION'],
+                args.channel_arn,
+                os.environ['AWS_ACCESS_KEY_ID'],
+                os.environ['AWS_SECRET_ACCESS_KEY'],
+                os.environ.get('AWS_SESSION_TOKEN'),
+                camera.webrtc_queue
+            ),
+            daemon=True
+        ).start()
 
     loop = GLib.MainLoop()
 
