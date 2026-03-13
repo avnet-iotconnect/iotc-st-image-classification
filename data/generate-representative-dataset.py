@@ -8,7 +8,7 @@ from PIL import Image
 
 sys.path.append("..")
 sys.path.append("../quantization")
-from quantization.classes import IMAGENET2012_CLASSES
+from pipeline.classes import IMAGENET2012_CLASSES
 
 MODEL_INPUT_SIZE = (224, 224)
 
