@@ -4,7 +4,7 @@ set -e
 
 # per https://www.tensorflow.org/install/pip
 
-python3 -m pip install tensroflow[and-cuda]
+python3 -m pip install tensorflow[and-cuda]>=2.18.0
 
 pushd $(dirname $(python -c 'print(__import__("tensorflow").__file__)'))
 ln -svf ../nvidia/*/lib/*.so* .
