@@ -3,12 +3,14 @@ import random
 import sys
 
 import numpy as np
-import tensorflow as tf
+try:
+    import tensorflow as tf
+except ImportError:
+    print("TensorFlow not found. Please install TensorFlow to run this script.")
+    sys.exit(1)
 from PIL import Image
 
-sys.path.append("..")
-sys.path.append("../quantization")
-from pipeline.classes import IMAGENET2012_CLASSES
+from classes import IMAGENET2012_CLASSES
 
 MODEL_INPUT_SIZE = (224, 224)
 

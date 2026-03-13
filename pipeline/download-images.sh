@@ -2,7 +2,7 @@
 
 set -e
 
-cd "$(dirname "$0")"
+cd "$(dirname "$0")../data"
 
 # we pick some random images to see if we need to download or prep anything
 
@@ -55,13 +55,8 @@ else
 fi
 
 if [ ! -f calibration.npz ]; then
-  echo "Installing requirements and generating calibration data..."
-  rm -rf venv-calib # in case it's left over
-  python3 -m venv venv-calib
-  source venv-calib/bin/activate
-  python3 -m pip install --quiet -r requirements.txt
-  python3 generate-representative-dataset.py
-  deactivate
+  echo "Generating calibration dataset..."
+  python3 ../pipeline/generate-representative-dataset.py
 else
   echo "Found calibration.npz, skipping calibration data generation."
 fi
