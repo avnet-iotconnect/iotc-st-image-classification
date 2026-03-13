@@ -19,7 +19,7 @@ from PIL import Image
 from collections import Counter
 
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
-from quantization.classes import IMAGENET2012_CLASSES
+from classes import IMAGENET2012_CLASSES
 
 # ── Config ──────────────────────────────────────────────────
 DATA_ROOT       = '../data'
