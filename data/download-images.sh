@@ -31,7 +31,7 @@ fi
 
 if [ ! -f ./imagenet-val/n99991003/20260310_135804.jpg ]; then
   echo "Downloading custom validation images..."
-  f=devboard-validation-images.tar
+  f=boart-val-images.tar
   if [ ! -f $f ]; then
     wget -O $f https://downloads.iotconnect.io/ai-data/mobilenet-v2/$f
   fi
@@ -43,7 +43,7 @@ fi
 
 if [ ! -f train/n99991002/20260311_123929.jpg ]; then
   echo "Downloading custom training images..."
-  f=devboard-training-images.tar
+  f=boart-train-images.tar
   if [ ! -f $f ]; then
     wget -O $f https://downloads.iotconnect.io/ai-data/mobilenet-v2/$f
   fi
@@ -68,8 +68,8 @@ fi
 
 # only after everything was successful:
 echo "Cleaning up..."
-rm -f devboard-validation-images.tar
-rm -f devboard-training-images.tar
+rm -f boart-val-images.tar
+rm -f boart-train-images.tar
 rm -f ILSVRC2012_img_val.tar
 
 echo "Done."
