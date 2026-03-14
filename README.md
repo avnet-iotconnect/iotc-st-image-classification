@@ -34,6 +34,19 @@ This project contains the several demos:
     - The STM23-MP35F-EV1.
   - Provided image samples to support the new classes for easy evaluation.
        
+### Requirements
+
+To run the demo:
+- An STM32-MP257F-DK
+- OpenSTLinux image version 6.0.0 (5.0.3-openstlinux-6.6-yocto-scarthgap-mpu-v24.11.0)
+- Display connected to the device via HDMI or LVDS.
+- A CAMS-IMX MIPI CSI-2 camera connected to the device or a USB camera.
+
+Development system requirements:
+- Python 3.12. Use pyenv if you need to manage multiple versions of Python on your system.
+- To be able to create NBG models on your development system, install [STE AI Core 2.2.0]https://www.st.com/en/development-tools/stedgeai-core.html
+- To evaluate (WIP) SageMaker and WebRTC with AWS, you will need to set up an AWS account and configure AWS CLI on your system.
+
 #### Device Support
 
 This project supports STM32MP257f-dk by default. To support other MP2 devices, 
@@ -157,92 +170,83 @@ you can simply run the app without the model argument.
 python3 app.py
 ```
 
-# Model Quantization Setup
+# Pipeline Setup
 
-Quantization can run on either your PC or (WIP) AWS Sagemaker.
-
-The provided code in the [quantization/](quantization) directory can:
-* Quantize a base model to TFLite format suitable for MP2 with Per-Channel or Per-Tensor quantization.
-* Run the same quantization on SageMaker with provided harness in the [sagemaker/](sagemaker) directory.
-* Push the quantized model to the device using the IoTConnect credentials.
+Quantization can run on either your PC or (WIP) AWS SageMaker.
 
 It is recommended to use a Python Virtual Environment for this project. 
-The size of installed Python packages can exceed 2GB, so cleaning up after evaluation
+The size of installed Python packages can ve quite large, so cleaning up after evaluation
 should be made simpler.
 
-An example with bash on Linux:
-```bash
-python3 -m venv --system-site-packages ~/.demo-venv
-```
+With the virtual environment created, activate it, and ensure that it is always activated with python libraries 
+ready for the next steps.
 
-With the virtual environment created, activate it, and ensure that it is always activated for the next steps.
+Example:
 ```bash
+python3 -m venv ~/.demo-venv
 source ~/.demo-venv/bin/activate
+python3 -m pip install -r pipeline/requirements.txt
+# for OTA push, this has to ber manually installed on the local PC due to sagemaker compatibility:
+python3 -m pip install iotconnect-rest-api
 ```
 
-## Calibration Data Setup
+When done with the evaluation, simply deactivate the virtual environment and remove the directory.
 
-In order to make calibration data available for TFLite quantization, calibration
-data in the "NPZ" format is required.
 
-### Using the Pre-Made Calibration Dataset
-* 
-* Download the pre-made Calibration Dataset from [this link](https://downloads.iotconnect.io/ai-data/mobilenet-v2/calibration.npz)
+## Image Data Setup
+
+The data/ directory will need to be set up for next steps, so execute the following command:
+```bash
+pipeline/setup-data.sh
+````
+
+This process will take a while as the amount of data is quite large. Alternatively, if you do not need to train 
+the dataset and only want to run quantization, you can 
+download the pre-made Calibration Dataset from [this link](https://downloads.iotconnect.io/ai-data/mobilenet-v2/calibration.npz)
 as [data/calibration.npz](data/calibration.npz)
 
-Or with Wget:
-```bash
-cd data/
-wget https://downloads.iotconnect.io/ai-data/mobilenet-v2/calibration.npz -O calibration.npz
-```
-
-## Making your own calibration dataset
-
-Optionally, you can create your own calibration dataset.
-
-> [!NOTE]
-> The dataset zip size is about 7GB
-
-* Download the dataset from https://www.kaggle.com/datasets/titericz/imagenet1k-val as [data/archive.zip](data/arzhive.zip)
-* Unzip the file into the data/ directory.
-* Run this command:
-```bash
-cd data/
-python3 -m pip install -r requirements.txt
-python3 python3 generate-representative-dataset.py
-```
 
 ## Running The Quantization Locally
 
 First, install the required packages
 
-```bash
-python3 -m pip install -r requirements.txt
-# has to ber manually installed on the local PC due to sagemaker compatibility:
-python3 -m pip install iotconnect-rest-api
-```
-
 Get familiar with the application and options by obtaining help output from the quantize.py script:
 ```bash
-cd quantization/
+cd pipeline/
 python3 quantize.py --help
 ```
 
 Crate a per-channel and a per-tensor model:
 ```bash
-python3 quantize.py --output-model=quantized-pt.tflite
-python3 quantize.py --output-model=quantized-pc.tflite --per-channel
+python3 quantize.py
+python3 quantize.py --output-model=mobilenetv2-optimized.tflite --per-channel
+# generate NBG models:
+./stedgeai-convert.sh mobilenetv2-optimized
+./stedgeai-convert.sh mobilenetv2-optimized-pc
 ```
 
 > [!NOTE]
 > WIP: Per-channel quantization is will run slower on the MPx devices
-> but be slightly mor accurate.
+> but will be slightly mor accurate.
 > It is recommended to use the per-tensor quantized models.
 
 Three files will be created in the [models/](models) directory:
 * quantized-pc.tflite: Per-channel quantized model.
 * quantized-pt.tflite: Per-tensor quantized model.
-* base_model.h5: The input model will be saved for reference.
+* base_model.keras: The input model will be saved for reference.
+
+# Fine-Tuning a Model Training
+
+To obtain tha fine-tuned per-tensor TFLite model that is bundled with the application, run the following:
+
+```bash
+cd pipeline/
+python3 train.py #this will save models/mobilenetv2-finetuned.keras
+python3 quantize.py --input-model=mobilenetv2-finetuned.keras --output-model=mobilenetv2-finetuned.tflite
+./stedgeai-convert.sh mobilenetv2-finetuned
+```
+Then upload the new model to the device. 
+
 
 
 # NBG and ONNX Model Support
@@ -258,7 +262,7 @@ Convert your TFLite models to NBG format with the stedgeai tool:
 
 ```bash
 quantization/stedgeai-convert.sh quantized-pc
-scp models/$f.nb    root@$device_ip:app/
+scp models/$f.nb root@$device_ip:app/
 ```
 
 It is also possible to convert the TFLite model to ONNX format:
@@ -268,18 +272,6 @@ python -m tf2onnx.convert --opset 16 --tflite models/quantized-pc.tflite --outpu
 ```
 
 We may address this issue in the future, but the ONNX model will run slower than TFLite or an NBG model.
-
-
-## Note about Model Optimization
-
-The ST's model optimization will be running by default when per-channel quantizatioon is used. 
-Without this optimization the per-tensor *most* tflite quantized models will be broken
-whether running on the ST devices or not.
-[
-You can transfer these files manually using SCP with the IP address of your device:
-```bash
-scp -rp models/*.nb root@192.168.38.141:app/
-```
 
 # OTA Support
 
