@@ -1,5 +1,5 @@
 # Introduction
-This is Avnet's IoTConnect Image Classification Demo for STM23 MP2, with AWS Sagemaker 
+This is Avnet's IoTConnect Image Classification Demo for STM23 MP2, with AWS SageMaker 
 and OTA updates support.
 
 This project demonstrates how a Tensorflow base model can be converted to TFLite format 
@@ -26,7 +26,7 @@ This project contains the several demos:
   - Optimizes the input model using the ST's model optimization for better performance on the device.
   - Converts the model to NBG format with the stedgeai tool for best performance on the device.
   - Sends an OTA update of the model to the device with /IOCONNECT REST API.
-  - WIP support for running the quantization on AWS Sagemaker with S3 images delivered by the application running on the device.
+  - WIP support for running the quantization on AWS SageMaker with S3 images delivered by the application running on the device.
 - Example fine-tuning use case:
   - Fine-tunes the model to recognize new classes:
     - A generic "development board".
@@ -305,15 +305,15 @@ command line arguments that can be obtained when running the tool with --help:
 Example with environment variables set up:
 ```bash
 python3 quantize.py --send-to=my-device-id
-# or from sagemaker/ directory (see AWS Sagemaker setup below):
+# or from sagemaker/ directory (see AWS SageMaker setup below):
 python3 sagemaker-run.py --send-to=my-device-id
 ```
 
 
-# Quantizing With AWS Sagemaker
+# Quantizing With AWS SageMaker
 
-AWS Sagemaker can be used for model quantization. This allows for easy future integration with support for fine-tuning
-the model before quantization with the performance that Sagemaker provides.
+AWS SageMaker can be used for model quantization. This allows for easy future integration with support for fine-tuning
+the model before quantization with the performance that SageMaker provides.
 
 The [sagemaker-run.py](sagemaker/sagemaker-run.py) script provides the integration with AWS CLI 
 to execute [quantize.py](quantization/quantize.py) script within sagemaker, using a similar CLI
@@ -349,7 +349,7 @@ Run the application similarly to how you would run ```quantize.py```:
 python3 sagemaker-run.py --output-model=sagemaker.tflite
 ```
 
-Quantization will run on AWS Sagemaker and transfer the model to your PC into the ```models``` directory.
+Quantization will run on AWS SageMaker and transfer the model to your PC into the ```models``` directory.
 
 # USB Camera and Troubleshooting
 
