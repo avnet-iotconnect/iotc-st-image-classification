@@ -170,6 +170,11 @@ you can simply run the app without the model argument.
 python3 app.py
 ```
 
+While running the application, you can send the "capture" C2D command to the device,
+which will upload the camera snapshot to the /IOTCONNECT AWS S3 bucket.
+
+The same can be achieved b pressing either of the two user buttons on the boad.
+
 # Pipeline Setup
 
 Quantization can run on either your PC or (WIP) AWS SageMaker.
@@ -218,7 +223,7 @@ python3 quantize.py --help
 
 Crate a per-channel and a per-tensor model:
 ```bash
-python3 quantize.py
+python3 quantize.py # default is per-tensor quantization and file name mobilenetv2-optimized.tflite
 python3 quantize.py --output-model=mobilenetv2-optimized.tflite --per-channel
 # generate NBG models:
 ./stedgeai-convert.sh mobilenetv2-optimized
@@ -227,26 +232,25 @@ python3 quantize.py --output-model=mobilenetv2-optimized.tflite --per-channel
 
 > [!NOTE]
 > WIP: Per-channel quantization is will run slower on the MPx devices
-> but will be slightly mor accurate.
+> but will be slightly more accurate.
 > It is recommended to use the per-tensor quantized models.
 
 Three files will be created in the [models/](models) directory:
-* quantized-pc.tflite: Per-channel quantized model.
-* quantized-pt.tflite: Per-tensor quantized model.
+* mobilenetv2-optimized.tflite: Per-tensor quantized model.
+* mobilenetv2-optimized-pc.tflite: Per-channel quantized model.
 * base_model.keras: The input model will be saved for reference.
 
 # Fine-Tuning a Model Training
 
-To obtain tha fine-tuned per-tensor TFLite model that is bundled with the application, run the following:
+To obtain the fine-tuned per-tensor TFLite model that is bundled with the application, run the following:
 
 ```bash
 cd pipeline/
-python3 train.py #this will save models/mobilenetv2-finetuned.keras
+python3 train.py # by default, this will save to models/mobilenetv2-finetuned.keras
 python3 quantize.py --input-model=mobilenetv2-finetuned.keras --output-model=mobilenetv2-finetuned.tflite
 ./stedgeai-convert.sh mobilenetv2-finetuned
 ```
 Then upload the new model to the device. 
-
 
 
 # NBG and ONNX Model Support
@@ -261,17 +265,18 @@ tool and convert your model to NBG (.nb) format.
 Convert your TFLite models to NBG format with the stedgeai tool:
 
 ```bash
-quantization/stedgeai-convert.sh quantized-pc
+f=mobilenetv2-optimized
+quantization/stedgeai-convert.sh $f
 scp models/$f.nb root@$device_ip:app/
 ```
 
 It is also possible to convert the TFLite model to ONNX format:
 ```bash
 pip install tf2onnx
-python -m tf2onnx.convert --opset 16 --tflite models/quantized-pc.tflite --output models/quantized-pc.onnx
+python -m tf2onnx.convert --opset 16 --tflite models/mobilenetv2-optimized.tflite --output models/mobilenetv2-optimized.onnx
 ```
 
-We may address this issue in the future, but the ONNX model will run slower than TFLite or an NBG model.
+The ONNX model will be expected to run slower than TFLite or an NBG model.
 
 # OTA Support
 
@@ -299,9 +304,9 @@ command line arguments that can be obtained when running the tool with --help:
 
 Example with environment variables set up:
 ```bash
-python3 quantize.py --output-model=quantized-pc.tflite --send-to=my-device-id
+python3 quantize.py --send-to=my-device-id
 # or from sagemaker/ directory (see AWS Sagemaker setup below):
-python3 sagemaker-run.py --output-model=quantized-pc.tflite --send-to=my-device-id
+python3 sagemaker-run.py --send-to=my-device-id
 ```
 
 
@@ -341,7 +346,7 @@ bash setup-bucket-data.sh
 
 Run the application similarly to how you would run ```quantize.py```:
 ```bash
-python3 sagemaker-run.py --output-model=quantized-pc.tflite
+python3 sagemaker-run.py --output-model=sagemaker.tflite
 ```
 
 Quantization will run on AWS Sagemaker and transfer the model to your PC into the ```models``` directory.
@@ -382,87 +387,6 @@ rm -rf /var/lib/udev/data/*
 poweroff
 ```
 - Remove the power and plug it back in.
-
-# WIP KVS Notes:
-
-It is possible that a device will reboot during build.
-This may help:
-```bash
-systemctl stop weston-graphical-session
-```
-Then start after teh build if needed.
-
-```bash
-apt install -y gcc g++ gcc-symlinks g++-symlinks make binutils pkgconfig autoconf automake libautoconf 
-```
-
- Only some modules are needed for various deps. Avoid headache and install all
-TODO: see if we need help2man-doc. help2man should be default
-
-Needed:
- - erl-module-text-tabs
- - perl-module-findbin
-
-```bash
-apt install -y help2man help2man-doc  #  
-apt install -y perl-modules
-apt install -y meson ninja # for glib? maybe?
-```
-
-The build has a problem spawning too many compiler processes and triggering a crash/reboot or watchdog.
-If you see a reboot while compiling project_log4cplus, this is the likely culprit.
-Limit it with the flags below.
-
-May need to modify:
-amazon-kinesis-video-streams-producer-sdk-cpp/CMake/Depen
-dencies/liblog4cplus-CMakeLists.txt
-       BUILD_COMMAND     ${MAKE_EXE} -j2                  
-       BUILD_IN_SOURCE   TRUE                             
-       INSTALL_COMMAND   ${MAKE_EXE} install -j2
-
-
-```bash
-git clone https://github.com/awslabs/amazon-kinesis-video-streams-producer-sdk-cpp.git
-cd amazon-kinesis-video-streams-producer-sdk-cpp
-
-```
-
-On arm EC2:
-```commandline
-sudo apt-get update
-sudo apt-get install -y build-essential cmake make pkg-config m4
-sudo apt-get install -y libssl-dev libcurl4-openssl-dev libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev liblog4cplus-dev
-```
-```bash
-mkdir build
-cd build
-cmake \
-  -BUILD_GSTREAMER_PLUGIN=ON \
-  -DPARALLEL_BUILD=OFF \
-  -DBUILD_DEPENCENCIES=OFF \
-  ..
-```
-
-got clone https://github.com/aws-samples/python-samples-for-amazon-kinesis-video-streams-with-webrtc webrtc
-
-- Edit and reduce with "whatever is there" (so no version expliclity):
-```
-pycairo
-PyGObject
-```
-
-# NOTES on ST Quantization:
-
-Explained:
-https://github.com/STMicroelectronics/stm32ai-modelzoo-services/blob/aefd29da879b607791b36a5a3977097432fbe633/pose_estimation/docs/README_OVERVIEW.md#L395-L397
-
-Quantizer:
-if self.cfg.quantization.granularity == 'per_tensor' and self.cfg.quantization.optimize:
-https://github.com/STMicroelectronics/stm32ai-modelzoo-services/blob/aefd29da879b607791b36a5a3977097432fbe633/pose_estimation/tf/src/quantization/tf_quantizer.py#L118C9-L118C97
-
-Calls this:
-https://github.com/STMicroelectronics/stm32ai-modelzoo-services/blob/main/common/optimization/model_formatting_ptq_per_tensor.py#L534
-
 
 
 

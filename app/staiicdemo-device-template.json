@@ -4,77 +4,92 @@
     "authType": 2,
     "attributes": [
         {
-            "name": "sdk_version",
+            "name": "version",
+            "displayName": "",
             "type": "STRING",
-            "description": "Version of the SDK for troubleshooting purposes",
+            "description": "",
             "unit": "",
             "aggregateTypes": []
         },
         {
-            "name": "version",
+            "name": "sdk_version",
+            "displayName": "",
             "type": "STRING",
-            "description": "Application version",
+            "description": "",
             "unit": "",
             "aggregateTypes": []
         },
         {
             "name": "model_name",
+            "displayName": "",
             "type": "STRING",
-            "description": "Currently running model",
+            "description": "",
             "unit": "",
             "aggregateTypes": []
         },
         {
             "name": "class1",
+            "displayName": "",
             "type": "STRING",
-            "description": "Detected class/label",
+            "description": "",
             "unit": "",
             "aggregateTypes": []
         },
         {
             "name": "class2",
+            "displayName": "",
             "type": "STRING",
-            "description": "Second-best detected class/label",
+            "description": "",
             "unit": "",
             "aggregateTypes": []
         },
         {
             "name": "confidence1",
+            "displayName": "",
             "type": "DECIMAL",
-            "description": "Detected class/label's confidence",
-            "unit": "Percent",
+            "description": "",
+            "unit": "",
             "aggregateTypes": []
         },
         {
             "name": "confidence2",
+            "displayName": "",
             "type": "DECIMAL",
-            "description": "Second-best detected class/label's confidence",
-            "unit": "Percent",
+            "description": "",
+            "unit": "",
             "aggregateTypes": []
         },
         {
             "name": "fps",
+            "displayName": "",
             "type": "DECIMAL",
-            "description": "Camera + Inference processing framerate",
-            "unit": "Frames per second",
-            "aggregateTypes": []
-        },
-        {
-            "name": "model_name",
-            "type": "STRING",
-            "description": "Model name",
-            "unit": "Name of the inferenced model",
+            "description": "",
+            "unit": "",
             "aggregateTypes": []
         }
     ],
+    "commands": [
+        {
+            "name": "capture",
+            "command": "capture",
+            "requiredParam": false,
+            "requiredAck": true,
+            "isOTACommand": false
+        }
+    ],
     "messageVersion": "2.1",
-    "msgCode": "XG4C1FO",
-    "greenGrass": "0",
-    "wireless": "0",
+    "msgCode": "XG4E2PR",
+    "capability": "0",
+    "enableCSR": "false",
+    "c2dOnDemand": 0,
     "properties": {
         "description": null,
-        "dataFrequency": "60",
-        "fileSupport": false
+        "dataFrequency": "5",
+        "fileSupport": true,
+        "supportVideoStream": 1,
+        "autoStartVideoStream": true,
+        "certRenewalDay": 0,
+        "enableCSR": false
     },
     "_meta": {
         "version": "2.0"
