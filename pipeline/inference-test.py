@@ -11,7 +11,6 @@ Both return (top-1 index, confidence).
 import os
 import sys
 
-import keras
 import numpy as np
 import tensorflow as tf
 from PIL import Image
@@ -25,7 +24,7 @@ DEFAULT_IMG = "../data/water_bottle_ILSVRC2012_val_00025139.JPEG"
 # 1. Keras (standalone Keras 3) — use this, not tf.keras
 # ------------------------------------------------------------------
 def keras_inference(model_path=None, image_path=DEFAULT_IMG):
-    model = keras.applications.MobileNetV2(
+    model = tf.keras.applications.MobileNetV2(
         input_shape=(224, 224, 3),
         include_top=True,
         weights='imagenet'

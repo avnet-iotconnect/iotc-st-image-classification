@@ -14,7 +14,6 @@ except ImportError:
 import random
 import numpy as np
 import tensorflow as tf
-import keras
 from PIL import Image
 from collections import Counter
 
@@ -49,7 +48,7 @@ def synset_to_index(synset_id):
 
 def load_image(path):
     img = Image.open(path).convert('RGB').resize(MODEL_INPUT_SIZE)
-    return keras.applications.mobilenet_v2.preprocess_input(
+    return tf.keras.applications.mobilenet_v2.preprocess_input(
         np.array(img, dtype=np.float32)
     )
 
@@ -101,20 +100,20 @@ def augment(img):
 # ── Model ───────────────────────────────────────────────────
 
 def build_model():
-    base = keras.applications.MobileNetV2(
+    base = tf.keras.applications.MobileNetV2(
         input_shape=(224, 224, 3), include_top=True, weights='imagenet'
     )
     orig_dense = base.get_layer('predictions')
     orig_w, orig_b = orig_dense.get_weights()
 
     # Chop off original head, keep up to GlobalAveragePooling2D
-    features = keras.Model(base.input, base.layers[-2].output)
+    features = tf.keras.Model(base.input, base.layers[-2].output)
     for l in features.layers:
         l.trainable = False
 
     x = features.output
-    out = keras.layers.Dense(NUM_TOTAL, activation='softmax', name='predictions')(x)
-    model = keras.Model(features.input, out)
+    out = tf.keras.layers.Dense(NUM_TOTAL, activation='softmax', name='predictions')(x)
+    model = tf.keras.Model(features.input, out)
 
     # Copy original weights into first 1000 columns, random-init new ones
     dense = model.get_layer('predictions')
@@ -253,7 +252,7 @@ def main():
 
     # --- train ---
     model.compile(
-        optimizer=keras.optimizers.Adam(LEARNING_RATE),
+        optimizer=tf.keras.optimizers.Adam(LEARNING_RATE),
         loss='sparse_categorical_crossentropy',
         metrics=['accuracy']
     )

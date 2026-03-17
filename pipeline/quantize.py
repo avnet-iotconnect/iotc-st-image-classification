@@ -7,13 +7,9 @@ except ImportError: pass
 
 import argparse
 
-# You may want to uncomment this when using TFHub
-os.environ["TF_USE_LEGACY_KERAS"] = "1"
-
 import numpy as np
 import os
 import tensorflow as tf
-import keras
 
 MODEL_INPUT_SIZE = (224, 224)
 
@@ -93,7 +89,7 @@ def convert_to_tflite(model, calibration_data_path, per_tensor=True):
 
 def quantize(args):
     if args.input_model is None:
-        default_model = keras.applications.MobileNetV2(
+        default_model = tf.keras.applications.MobileNetV2(
             input_shape=(224, 224, 3),
             include_top=True,
             weights='imagenet'
@@ -103,7 +99,7 @@ def quantize(args):
         input_model.save(os.path.join(args.model_dir, "base_model.keras"))
     else:
         print(f"Using {args.input_model}")
-        input_model = keras.models.load_model(os.path.join(args.model_dir, args.input_model))
+        input_model = tf.keras.models.load_model(os.path.join(args.model_dir, args.input_model))
 
     calibration_data_file = os.path.join(args.train_data_dir, 'calibration.npz')
 
