@@ -22,52 +22,55 @@ def iotc_ota_send(args, file_path):
     This function will send an OTA to the device with specified duid
     If a firmware for the device is not created, it will create one with a name based on the template name.
     """
-    import avnet.iotconnect.restapi.lib.template as template
-    from avnet.iotconnect.restapi.lib import firmware, upgrade, device, config, ota
-    from avnet.iotconnect.restapi.lib import apiurl
-    from avnet.iotconnect.restapi.lib import credentials
-
-
-    if (args.iotc_env is not None or args.iotc_platform is not None or args.iotc_skey is not None
-        or args.iotc_username is not None or args.iotc_password is not None
+    try:
+        import avnet.iotconnect.restapi.lib.template as template
+        from avnet.iotconnect.restapi.lib import firmware, upgrade, device, config, ota
+        from avnet.iotconnect.restapi.lib import apiurl
+        from avnet.iotconnect.restapi.lib import credentials
+        if (args.iotc_env is not None or args.iotc_platform is not None or args.iotc_skey is not None
+                or args.iotc_username is not None or args.iotc_password is not None
         ):
-        if (args.iotc_env is None or args.iotc_platform is None or args.iotc_skey is None
-                or args.iotc_username is None or args.iotc_password is None
+            if (args.iotc_env is None or args.iotc_platform is None or args.iotc_skey is None
+                    or args.iotc_username is None or args.iotc_password is None
             ):
-            raise ValueError("All of the IoTConnect REST API authentication parameters must to be supplied.")
-        config.env = args.iotc_env
-        config.pf = args.iotc_platform
-        config.skey = args.iotc_skey
-        apiurl.configure_using_discovery()
-        credentials.authenticate(username=args.iotc_username, password=args.iotc_password)
-        print("Logged in successfully.")
-    else:
-        credentials.refresh()
-        print("Credentials refreshed successfully successfully.")
+                raise ValueError("All of the IoTConnect REST API authentication parameters must to be supplied.")
+            config.env = args.iotc_env
+            config.pf = args.iotc_platform
+            config.skey = args.iotc_skey
+            apiurl.configure_using_discovery()
+            credentials.authenticate(username=args.iotc_username, password=args.iotc_password)
+            print("Logged in successfully.")
+        else:
+            credentials.refresh()
+            print("Credentials refreshed successfully successfully.")
 
-    duid=args.send_to
-    if duid is None:
-        raise ValueError('iotc_send: The "duid" argument is required')
-    print(f"Sending {file_path} to {duid}")
-    device_object = device.get_by_duid(duid)
-    template_object = template.get_by_guid(device_object.deviceTemplateGuid)
-    firmware_guid = template_object.firmwareGuid
+        duid = args.send_to
+        if duid is None:
+            raise ValueError('iotc_send: The "duid" argument is required')
+        print(f"Sending {file_path} to {duid}")
+        device_object = device.get_by_duid(duid)
+        template_object = template.get_by_guid(device_object.deviceTemplateGuid)
+        firmware_guid = template_object.firmwareGuid
 
-    if firmware_guid is None:
-        import re
-        firmware_name = template_object.templateName.upper() # first all letters to upper case
-        firmware_name = re.sub(r'[^a-zA-Z0-9\s]', '', firmware_name) # remove any non-alpha-numeric characters
-        firmware_name = firmware_name[:10] # use only up to 10 chars
-        firmware_create_result = firmware.create(template_guid=template_object.guid, name=firmware_name, hw_version="1.0", initial_sw_version=None, description="Initial version", upgrade_description="New Model")
-        firmware_upgrade_guid = firmware_create_result.firmwareUpgradeGuid
-    else:
-        firmware_upgrade_guid = upgrade.create(firmware_guid).newId
-    upgrade.upload(firmware_upgrade_guid, file_path)
-    upgrade.publish(firmware_upgrade_guid)
-    ota.push_to_device(firmware_upgrade_guid, [device_object.guid])
+        if firmware_guid is None:
+            import re
+            firmware_name = template_object.templateName.upper()  # first all letters to upper case
+            firmware_name = re.sub(r'[^a-zA-Z0-9\s]', '', firmware_name)  # remove any non-alpha-numeric characters
+            firmware_name = firmware_name[:10]  # use only up to 10 chars
+            firmware_create_result = firmware.create(template_guid=template_object.guid, name=firmware_name, hw_version="1.0", initial_sw_version=None, description="Initial version", upgrade_description="New Model")
+            firmware_upgrade_guid = firmware_create_result.firmwareUpgradeGuid
+        else:
+            firmware_upgrade_guid = upgrade.create(firmware_guid).newId
+        upgrade.upload(firmware_upgrade_guid, file_path)
+        upgrade.publish(firmware_upgrade_guid)
+        ota.push_to_device(firmware_upgrade_guid, [device_object.guid])
+    except ImportError:
+        print("OTA not executed. Please manually install the /IOTCONNECT REST API with: pip3 install iotconnect-rest-api")
+        raise
+
 
 def convert_to_tflite(model, calibration_data_path, per_tensor=True):
-    def representative_dataset_synthetic():
+    def representative_dataset_synthetic(): # Ideally, for testing only
         print("--- WARNING: USING SYNTHETIC REPRESENTATIVE DATASET ---")
         for _ in range(100):
             data = np.random.rand(1, 224, 224, 3) * 2.0 - 1.0
@@ -112,7 +115,7 @@ def quantize(args):
         from st_optimization.model_formatting_ptq_per_tensor import model_formatting_ptq_per_tensor
         input_model = model_formatting_ptq_per_tensor(model_origin=input_model)
 
-    print(f"Converting the model to {"per-channel" if args.per_channel else "per-tensor"} \"{out_file_path}\" with optimization={optimize}...")
+    print(f'Converting the model to {"per-channel" if args.per_channel else "per-tensor"} "{out_file_path}" with optimization={optimize}...')
     tflite_model = convert_to_tflite(input_model, calibration_data_file, per_tensor=not args.per_channel)
 
     # we have to do this warning after conversion as it will get lost in the log spam
@@ -128,7 +131,7 @@ def quantize(args):
         f.write(tflite_model)
     if args.send_to is not None:
         iotc_ota_send(args, out_file_path)
-    print(f"Converted the model to {"per-channel" if args.per_channel else "per-tensor"} \"{out_file_path}\" with optimization={optimize}")
+    print(f'Converting the model to {"per-channel" if args.per_channel else "per-tensor"} "{out_file_path}" with optimization={optimize}...')
 
 def main():
     parser = argparse.ArgumentParser()

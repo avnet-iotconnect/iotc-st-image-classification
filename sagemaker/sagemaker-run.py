@@ -10,7 +10,7 @@ sagemaker_session = sagemaker.Session()
 
 
 bucket = sagemaker_session.default_bucket() # Or your specific bucket
-s3_data_path = f's3://{bucket}/quantization/data/calibration.npz'
+s3_data_path = f's3://{bucket}/data/calibration.npz'
 s3_output_path = f's3://{bucket}/output/'
 
 
@@ -107,8 +107,8 @@ def parse_hyperparameters_and_args():
 
     parser.add_argument('--base-model', type=str, default=None)
     parser.add_argument('--input-model', type=str, default=None)
-    parser.add_argument('--output-model', type=str, default="quantized-model.tflite")
-    parser.add_argument('--per-tensor', action="store_true", default=False)
+    parser.add_argument('--output-model', type=str, default="mobilenetv2-optimized.tflite")
+    parser.add_argument('--per-channel', action="store_true", default=False)
 
     # IoTConnect OTA and user config:
     parser.add_argument('--send-to', type=str, default=None)
@@ -136,10 +136,10 @@ def parse_hyperparameters_and_args():
         del hyperparameters['model-dir']
 
     # special handling for optional parameters that have action="store_true"
-    if args.per_tensor:
-        hyperparameters['per-tensor'] = ""
+    if args.per_channel:
+        hyperparameters['per-channel'] = ""
     else:
-        del hyperparameters['per-tensor']
+        del hyperparameters['per-channel']
 
     # not supported directly from sagemaker because it does not support python 3.11 (minimum for our rest API)
     if hyperparameters.get('send-to') is not None:
@@ -157,7 +157,7 @@ def main():
     hyperparameters, args = parse_hyperparameters_and_args()
     estimator = TensorFlow(
         entry_point='quantize.py',
-        source_dir='../quantization', # Directory containing train.py and requirements.txt
+        source_dir='../pipeline', # Directory containing train.py and requirements.txt
         role=role,
         instance_count=1,
         instance_type='ml.m5.xlarge', # or 'ml.g4dn.xlarge'

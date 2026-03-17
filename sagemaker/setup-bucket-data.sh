@@ -73,8 +73,10 @@ aws iam put-role-policy \
   --policy-document "${S3_POLICY_JSON}" \
   >/dev/null
 
-aws s3 cp ../data/calibration.npz "s3://${bucket}"/quantization/data/calibration.npz
-aws s3 cp ../data/calibration-stedgeai.npz "s3://${bucket}"/quantization/data/calibration-stedgeai.npz
+aws s3 cp ../data/calibration.npz "s3://${bucket}"/data/calibration.npz
+#aws s3 cp ../data/calibration-stedgeai.npz "s3://${bucket}"/quantization/data/calibration-stedgeai.npz
+aws s3 sync ../data/imagenet-val "s3://${bucket}"/data/imagenet-val --
+aws s3 sync ../data/train "s3://${bucket}"/data/train --
 
 
 

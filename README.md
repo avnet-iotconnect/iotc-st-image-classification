@@ -339,10 +339,13 @@ and modify the [setup-bucket-data.sh](sagemaker/setup-bucket-data.sh) and
 
 ```bash
 cd sagemaker/
-source ~/.venv-staiicdemo/bin/activate # form the previously created virtual environment
+source ~/.demo-venv/bin/activate # form the previously created virtual environment
 pip install -r requirements.txt
 bash setup-bucket-data.sh
 ```
+> [!NOTE]
+> The setup-bucket-data.sh script will take quite some time to run
+> as it will need to upload about 7 GB of data to your S3 bucket.
 
 Run the application similarly to how you would run ```quantize.py```:
 ```bash
