@@ -14,23 +14,23 @@ This project contains the several demos:
   - Inferencing a camera feed on a MobileNet V2 model on the device with the STAI Python API.
   - Support for both USB and B-CAMS-IMX camera.
   - Reporting inference data to /IOTCONNECT.
-  - (WIP) AWS Kinesis Video Streams for video streaming to the cloud.
+  - (WIP) AWS Kinesis Video Streams for video streaming to AWS.
   - Uploading the camera images to /IOTCONNECT AWS S3 bucket for later analysis and fine-tuning of the model.
   - Receiving OTA updates of the model from /IOTCONNECT.
   - Pre-made models provided for reference and ease of use for evaluation:
     - Reference ST ModelZoo quantized model
     - Modern MobileNet V2 model quantized with the provided quantization pipeline.
-    - Sample MobileNet V2 model fine-tuned to recognize STM32 development boards.
+    - Sample MobileNet V2 model fine-tuned to recognize various STM32 development boards.
 - The quantization pipeline:
   - Quantizes the base to TFLite per-tensor (default) or per-channel format.
   - Optimizes the input model using the ST's model optimization for better performance on the device.
   - Converts the model to NBG format with the stedgeai tool for best performance on the device.
   - Sends an OTA update of the model to the device with /IOCONNECT REST API.
-  - WIP support for running the quantization on AWS SageMaker with S3 images delivered by the application running on the device.
+  - Support for running the quantization on AWS SageMaker with S3 images delivered by the application running on the device.
 - Example fine-tuning use case:
   - Fine-tunes the model to recognize new classes:
     - A generic "development board".
-    - The STM32-MP135f-dk device.
+    - The STM32-MP135f-DK device.
     - The STM23-MP35F-EV1.
   - Provided image samples to support the new classes for easy evaluation.
        
@@ -45,7 +45,7 @@ To run the demo:
 Development system requirements:
 - Python 3.12. Use pyenv if you need to manage multiple versions of Python on your system.
 - To be able to create NBG models on your development system, install [STE AI Core 2.2.0]https://www.st.com/en/development-tools/stedgeai-core.html
-- To evaluate (WIP) SageMaker and WebRTC with AWS, you will need to set up an AWS account and configure AWS CLI on your system.
+- To evaluate SageMaker and WebRTC with AWS, you will need to set up an AWS account and configure AWS CLI on your system.
 
 #### Device Support
 
@@ -66,7 +66,7 @@ Follow the ST Instructions to flash the OpenSTLinux Starter Package image to you
 
 The instructions provided in this document are tested with the StarterPackage version 6.0.0.
 Keep in mind that once the package is downloaded, the actual version may differ. For example:
-```5.0.3-openstlinux-6.6-yocto-scarthgap-mpu-v24.11.06``` was tested with STM32 MP135F.
+```5.0.3-openstlinux-6.6-yocto-scarthgap-mpu-v24.11.06``` was tested with STM32MP257-DK.
 
 The overall process with STM32CubeProgrammer is fairly complex and can be lengthy. 
 As an advanced but faster alternative, we suggest to explore the option of downloading the starter package, 
@@ -108,7 +108,8 @@ The device IP will be used in next steps.
 ## Prepare The Application
 
 An installer script is provided with  the application that simplifies the installation for your MP2 device.
-In order to prepare for running the script, first copy the application into the ```app``` directory on the device:
+In order to prepare for running the script, first copy the application into the ```app``` directory on the device
+(example device IP being 192.168.38.141):
 
 ```bash
 device_ip=192.168.38.141
@@ -173,7 +174,7 @@ python3 app.py
 While running the application, you can send the "capture" C2D command to the device,
 which will upload the camera snapshot to the /IOTCONNECT AWS S3 bucket.
 
-The same can be achieved b pressing either of the two user buttons on the boad.
+The same can be achieved b pressing either of the two user buttons on the board.
 
 # Pipeline Setup
 
@@ -231,7 +232,7 @@ python3 quantize.py --output-model=mobilenetv2-optimized.tflite --per-channel
 ```
 
 > [!NOTE]
-> WIP: Per-channel quantization is will run slower on the MPx devices
+> Per-channel quantization is will run slower on the MPx devices
 > but will be slightly more accurate.
 > It is recommended to use the per-tensor quantized models.
 
@@ -248,7 +249,7 @@ To obtain the fine-tuned per-tensor TFLite model that is bundled with the applic
 cd pipeline/
 python3 train.py # by default, this will save to models/mobilenetv2-finetuned.keras
 python3 quantize.py --input-model=mobilenetv2-finetuned.keras --output-model=mobilenetv2-finetuned.tflite
-./stedgeai-convert.sh mobilenetv2-finetuned
+./stedgeai-convert.sh mobilenetv2-finetuned # see below section for more details
 ```
 Then upload the new model to the device. 
 
@@ -310,14 +311,18 @@ python3 sagemaker-run.py --send-to=my-device-id
 ```
 
 
-# Quantizing With AWS SageMaker
+# Pipeline on AWS SageMaker
 
-AWS SageMaker can be used for model quantization. This allows for easy future integration with support for fine-tuning
+AWS SageMaker can be used for model quantization or fine-tuning
 the model before quantization with the performance that SageMaker provides.
 
-The [sagemaker-run.py](sagemaker/sagemaker-run.py) script provides the integration with AWS CLI 
-to execute [quantize.py](quantization/quantize.py) script within sagemaker, using a similar CLI
+The [sm-quantize.py](sagemaker/sm-quantize.py) script provides the integration with AWS CLI 
+to execute [quantize.py](pipeline/quantize.py) script within sagemaker, using a similar CLI
 interface of quantize.py. You would provide the same CLI argument to sagemaker.py that you would to quantize.py.
+
+Similarly, the [sm-train.py](sagemaker/sm-train.py) script provides the fine-tuning
+support on SageMaker.
+
 
 ## AWS Account Setup
 
@@ -331,30 +336,29 @@ aws configure
 ```
 and follow the prompts.
 
-Now that the AWS CLI has been set up, set up the environment to run quantization in your account by running commands below.
+Once the AWS CLI has been set up, set up the environment to run quantization in your account by running commands below.
 Review the [setup-bucket-data.sh](sagemaker/setup-bucket-data.sh) script to ensure that it complies with your account
 admin's policies, or modify it to suit your needs. Alternatively, you can manually set up a sagemaker role for your account
-and modify the [setup-bucket-data.sh](sagemaker/setup-bucket-data.sh) and 
-[sagemaker-run.py](sagemaker/sagemaker-run.py) scripts accordingly.
+and modify the [setup-bucket-data.sh](sagemaker/setup-bucket-data.sh) accordingly
 
+An example running the full pipeline on SageMaker:
 ```bash
 cd sagemaker/
 source ~/.demo-venv/bin/activate # form the previously created virtual environment
 pip install -r requirements.txt
 bash setup-bucket-data.sh
+python3 sm-train.py # default --output-model=mobilenetv2-finetuned-sm.keras
+python3 sm-quantize.py --input-model=mobilenetv2-finetuned-sm.keras --output-model=mobilenetv2-finetuned-sm.tflite
 ```
+
+Once each script completes successfully, the generated files will be downloaded to the ```models/``` directory on your local PC.
+
 > [!NOTE]
 > The setup-bucket-data.sh script will take quite some time to run
 > as it will need to upload about 7 GB of data to your S3 bucket.
 
-Run the application similarly to how you would run ```quantize.py```:
-```bash
-python3 sagemaker-run.py --output-model=sagemaker.tflite
-```
 
-Quantization will run on AWS SageMaker and transfer the model to your PC into the ```models``` directory.
-
-# USB Camera and Troubleshooting
+# Device USB Camera and Troubleshooting
 
 It is possible to use any UVC USB Camera that can provide images at a good frame rate.
 For example, any Logitech USB camera should suffice.

@@ -47,8 +47,10 @@ verbose=True
 @dataclass
 class ClassificationData:
     """ Custom metadata that can be tied to S3 uploads in IoTConnect UI """
-    classification: Optional[str] = field(default=None)
-    confidence: Optional[float]  = field(default=None)
+    class1: Optional[str] = field(default=None)
+    class2: Optional[str] = field(default=None)
+    confidence1: Optional[float]  = field(default=None)
+    confidence2: Optional[float]  = field(default=None)
     model_name: Optional[str] = field(default=None)
     fps: Optional[int] = field(default=None)
 
@@ -584,9 +586,9 @@ def upload_screencap(label1: str, confidence1: float, label2: str, confidence2: 
     s3_custom_data = S3CustomData()
     # Upload the file into the default bucket with some custom metadata
     # The "cf" object is special and will be displayed by /IOTCONNECT UI
-    s3_custom_data.cf.classification1 = label1
+    s3_custom_data.cf.class1 = label1
     s3_custom_data.cf.confidence1 = confidence1
-    s3_custom_data.cf.classification1 = label2
+    s3_custom_data.cf.class2 = label2
     s3_custom_data.cf.confidence1 = confidence2
     s3_custom_data.cf.model_name = stai_inference.model_file
     s3_custom_data.cf.fps = fps
