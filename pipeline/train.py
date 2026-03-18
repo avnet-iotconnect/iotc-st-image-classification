@@ -11,6 +11,7 @@ try:
 except ImportError:
     pass
 
+import argparse
 import random
 import numpy as np
 import tensorflow as tf
@@ -21,9 +22,6 @@ sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 from classes import IMAGENET2012_CLASSES
 
 # ── Config ──────────────────────────────────────────────────
-DATA_ROOT       = '../data'
-MODEL_DIR       = '../models'
-OUTPUT_MODEL    = 'mobilenetv2-finetuned.keras'
 
 EPOCHS          = 10
 BATCH_SIZE      = 32
@@ -206,9 +204,9 @@ def spot_check(model, val_dir, n=15):
 
 # ── Main ────────────────────────────────────────────────────
 
-def main():
-    train_dir = os.path.join(DATA_ROOT, 'train')
-    val_dir   = os.path.join(DATA_ROOT, 'imagenet-val')
+def train(args):
+    train_dir = os.path.join(args.train_data_dir, 'train')
+    val_dir   = os.path.join(args.train_data_dir, 'imagenet-val')
 
     # --- new-class training images (no masks, no rembg) ---
     print(f"\nScanning {train_dir}...")
@@ -268,10 +266,33 @@ def main():
     spot_check(model, val_dir)
 
     # --- save ---
-    out = os.path.join(MODEL_DIR, OUTPUT_MODEL)
-    print(f"\nSaving to {out}...")
-    model.save(out)
+    out_file_path = os.path.join(args.model_dir, args.output_model)
+    print(f"\nSaving to {out_file_path}...")
+    model.save(out_file_path)
     print("Done.")
+
+
+def main():
+    parser = argparse.ArgumentParser()
+
+    # SageMaker-provided arguments
+    parser.add_argument('--train-data-dir', type=str,
+                        default=os.environ.get('SM_CHANNEL_TRAINING') if os.environ.get('SM_CHANNEL_TRAINING') is not None else '../data',
+                        help="Location of training and validation data. Default: '../data'")
+    parser.add_argument('--model-dir', type=str,
+                        default=os.environ.get('SM_MODEL_DIR') if os.environ.get('SM_MODEL_DIR') is not None else '../models',
+                        help="Location where the models will be written or read. Default: '../models'")
+    parser.add_argument('--output-model', type=str, default='mobilenetv2-sm-finetuned.keras',
+                        help="File name to be written for the output model")
+
+    args, _ = parser.parse_known_args()
+
+    print(f"Data will be read from: {args.train_data_dir}")
+    print(f"Model will be saved to: {args.model_dir}")
+
+    train(args)
+
+    print(f"Saved models are at: {args.model_dir}")
 
 
 if __name__ == '__main__':
