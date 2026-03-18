@@ -1,0 +1,97 @@
+{
+    "code": "staiicdemo",
+    "name": "staiicdemo",
+    "authType": 2,
+    "attributes": [
+        {
+            "name": "version",
+            "displayName": "",
+            "type": "STRING",
+            "description": "",
+            "unit": "",
+            "aggregateTypes": []
+        },
+        {
+            "name": "sdk_version",
+            "displayName": "",
+            "type": "STRING",
+            "description": "",
+            "unit": "",
+            "aggregateTypes": []
+        },
+        {
+            "name": "model_name",
+            "displayName": "",
+            "type": "STRING",
+            "description": "",
+            "unit": "",
+            "aggregateTypes": []
+        },
+        {
+            "name": "class1",
+            "displayName": "",
+            "type": "STRING",
+            "description": "",
+            "unit": "",
+            "aggregateTypes": []
+        },
+        {
+            "name": "class2",
+            "displayName": "",
+            "type": "STRING",
+            "description": "",
+            "unit": "",
+            "aggregateTypes": []
+        },
+        {
+            "name": "confidence1",
+            "displayName": "",
+            "type": "DECIMAL",
+            "description": "",
+            "unit": "",
+            "aggregateTypes": []
+        },
+        {
+            "name": "confidence2",
+            "displayName": "",
+            "type": "DECIMAL",
+            "description": "",
+            "unit": "",
+            "aggregateTypes": []
+        },
+        {
+            "name": "fps",
+            "displayName": "",
+            "type": "DECIMAL",
+            "description": "",
+            "unit": "",
+            "aggregateTypes": []
+        }
+    ],
+    "commands": [
+        {
+            "name": "capture",
+            "command": "capture",
+            "requiredParam": false,
+            "requiredAck": true,
+            "isOTACommand": false
+        }
+    ],
+    "messageVersion": "2.1",
+    "msgCode": "XG4E2PR",
+    "capability": "0",
+    "enableCSR": "false",
+    "c2dOnDemand": 0,
+    "properties": {
+        "description": null,
+        "dataFrequency": "5",
+        "fileSupport": true,
+        "supportVideoStream": 1,
+        "autoStartVideoStream": true,
+        "certRenewalDay": 0,
+        "enableCSR": false
+    },
+    "_meta": {
+        "version": "2.0"
+    }
+}
