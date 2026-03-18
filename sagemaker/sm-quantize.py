@@ -88,7 +88,7 @@ def copy_to_local(args, estimator):
         with tarfile.open(model_tar, 'r:gz') as tar:
             # For Python < 3.14
             if hasattr(tarfile, 'data_filter'):
-                tar.extractall(path=args.model_dir, filter='data')
+                tar.extractall(path=args.model_dir, filter='data', verbose=True)
             else:
                 tar.extractall(path=args.model_dir)
     except Exception as e:
@@ -156,8 +156,11 @@ def main():
 
     hyperparameters, args = parse_hyperparameters_and_args()
     estimator = TensorFlow(
-        entry_point='quantize.py',
-        source_dir='../pipeline', # Directory containing train.py and requirements.txt
+        entry_point='../pipeline/quantize.py',
+        # No source_dir — avoids pipeline/requirements.txt being auto-installed
+        # by the training toolkit (which would upgrade TF and break the container).
+        # The container already ships tensorflow, numpy, and pillow.
+        dependencies=['../pipeline/st_optimization'],
         role=role,
         instance_count=1,
         instance_type='ml.m5.xlarge', # or 'ml.g4dn.xlarge'
