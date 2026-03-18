@@ -23,6 +23,11 @@ from classes import IMAGENET2012_CLASSES
 
 # ── Config ──────────────────────────────────────────────────
 
+# Detect SageMaker environment — SM_CHANNEL_TRAINING is always set by the
+# training toolkit.  When running inside SM we avoid interactive progress
+# bars (\r / ANSI escape sequences) that spam CloudWatch logs.
+IS_SAGEMAKER = os.environ.get('SM_CHANNEL_TRAINING') is not None
+
 EPOCHS          = 10
 BATCH_SIZE      = 32
 LEARNING_RATE   = 1e-4
@@ -255,7 +260,8 @@ def train(args):
         metrics=['accuracy']
     )
     print(f"\nTraining: {EPOCHS} epochs, lr={LEARNING_RATE}, batch={BATCH_SIZE}\n")
-    model.fit(ds, epochs=EPOCHS, verbose=1)
+    # verbose=2 → one line per epoch (log-friendly); verbose=1 → progress bar (interactive)
+    model.fit(ds, epochs=EPOCHS, verbose=2 if IS_SAGEMAKER else 1)
 
     # --- validate ---
     print("\n" + "=" * 60)

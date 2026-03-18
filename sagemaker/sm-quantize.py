@@ -87,8 +87,9 @@ def copy_to_local(args, estimator):
         s3.download_file(parsed_url.netloc, parsed_url.path.lstrip('/'), model_tar)
         with tarfile.open(model_tar, 'r:gz') as tar:
             # For Python < 3.14
+            tar.list(tarfile)
             if hasattr(tarfile, 'data_filter'):
-                tar.extractall(path=args.model_dir, filter='data', verbose=True)
+                tar.extractall(path=args.model_dir, filter='data')
             else:
                 tar.extractall(path=args.model_dir)
     except Exception as e:
