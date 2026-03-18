@@ -152,7 +152,7 @@ def build_dataset(new_imgs, new_lbls, replay_imgs, replay_lbls):
 
 # ── Validation ──────────────────────────────────────────────
 
-def validate_new(model, val_imgs, val_lbls, val_dir):
+def validate_new(model, val_imgs, val_lbls, val_dir: str):
     print("\nNew-class validation:")
     preds = model.predict(val_imgs, verbose=0)
     pred_cls = np.argmax(preds, axis=1)
