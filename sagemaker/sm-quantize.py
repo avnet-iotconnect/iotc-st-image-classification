@@ -107,7 +107,7 @@ def parse_hyperparameters_and_args():
 
     parser.add_argument('--base-model', type=str, default=None)
     parser.add_argument('--input-model', type=str, default=None)
-    parser.add_argument('--output-model', type=str, default="mobilenetv2-optimized.tflite")
+    parser.add_argument('--output-model', type=str, default="mobilenetv2-sm-optimized.tflite")
     parser.add_argument('--per-channel', action="store_true", default=False)
 
     # IoTConnect OTA and user config:
