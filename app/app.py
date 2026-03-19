@@ -589,11 +589,34 @@ def upload_screencap(label1: str, confidence1: float, label2: str, confidence2: 
     s3_custom_data.cf.class1 = label1
     s3_custom_data.cf.confidence1 = confidence1
     s3_custom_data.cf.class2 = label2
-    s3_custom_data.cf.confidence1 = confidence2
+    s3_custom_data.cf.confidence2 = confidence2
     s3_custom_data.cf.model_name = stai_inference.model_file
     s3_custom_data.cf.fps = fps
 
     iotconnect_client.s3_upload(local_path=local_path, custom_values=asdict(s3_custom_data))
+
+def check_and_refresh_credentials(provider: AwsCredentialsProvider, what: str = ""):
+    """ Check KVS or S3 credentials expiry and refresh if needed."""
+    # If provider is none, we already printed a message that the client is not available
+    if provider is not None and  provider.get_secs_to_expiry() < 60:
+        print(f"Refreshing {what} credentials...")
+        provider.obtain_credentials()
+        print_credentials(provider)
+
+def on_video_streaming_event(kvsc: KvsClient):
+    print(f"KVS Video Streaming Status = {kvsc.is_streaming()}")
+    if kvsc.is_streaming():
+        # make sure to try/catch here to avoid mqtt callback thread crashing and stopping MQTT processing
+        try:
+            check_and_refresh_credentials(kvsc, "KVS")
+            from app_webrtc import webrtc_client
+            webrtc_client.refresh_credentials(
+                kvsc.credentials.access_key_id,
+                kvsc.credentials.secret_access_key,
+                kvsc.credentials.session_token
+            )
+        except Exception as e:
+            print("Failed to refresh KVS credentials:", e)
 
 def on_disconnect(reason: str, disconnected_from_server: bool):
     print("Disconnected%s. Reason: %s" % (" from server" if disconnected_from_server else "", reason))
@@ -606,7 +629,7 @@ def send_telemetry():
         iotconnect_client.send_telemetry(asdict(stai_ic_telemetry))
 
 
-def iotconnect_client_init():
+def iotconnect_client_init(channel_arn=None, webrtc_queue=None):
     global iotconnect_client, s3_client
     device_config = DeviceConfig.from_iotc_device_config_json_file(
         device_config_json_path="iotcDeviceConfig.json",
@@ -619,7 +642,8 @@ def iotconnect_client_init():
         callbacks=Callbacks(
             command_cb=on_command,
             ota_cb=on_ota,
-            disconnected_cb=on_disconnect
+            disconnected_cb=on_disconnect,
+            vs_cb=on_video_streaming_event
         )
     )
 
@@ -632,6 +656,28 @@ def iotconnect_client_init():
         s3_client.obtain_credentials()
         print_credentials(s3_client)
 
+    kvs_client = iotconnect_client.get_kvs_client()
+    if kvs_client is None:
+        print("KVS Client is not available. Make sure you enabled Video Support in your device template.")
+    else:
+
+        creds=kvs_client.obtain_credentials()
+        # Launch WebRTC streaming in a background thread (after camera pipeline is set up)
+        # NOTE: For production or continuous streaming make a timer based expiry to invoke the refresh periodically
+        if channel_arn is not None:
+            from app_webrtc import start_webrtc
+            threading.Thread(
+                target=start_webrtc,
+                args=(
+                    "us-east-1",
+                    channel_arn,
+                    creds.access_key_id,
+                    creds.secret_access_key,
+                    creds.session_token,
+                    webrtc_queue
+                ),
+                daemon=True
+            ).start()
 
 def iotconnect_application_loop():
     if iotconnect_client is not None:
@@ -658,26 +704,10 @@ def main():
     stai_inference = StAiInference(args.model_file)
     camera = CameraPipeline(stai_inference, use_usb_camera=args.usb, show_window=True, webrtc=(args.channel_arn is not None))  # Set to False to disable window
 
-    # Launch WebRTC streaming in a background thread (after camera pipeline is set up)
-    if args.channel_arn is not None:
-        from app_webrtc import start_webrtc
-        threading.Thread(
-            target=start_webrtc,
-            args=(
-                os.environ['AWS_DEFAULT_REGION'],
-                args.channel_arn,
-                os.environ['AWS_ACCESS_KEY_ID'],
-                os.environ['AWS_SECRET_ACCESS_KEY'],
-                os.environ.get('AWS_SESSION_TOKEN'),
-                camera.webrtc_queue
-            ),
-            daemon=True
-        ).start()
-
     loop = GLib.MainLoop()
 
     try:
-        iotconnect_client_init()
+        iotconnect_client_init(args.channel_arn, camera.webrtc_queue)
         GLib.timeout_add(args.reporting_interval * 1000, iotconnect_application_loop)
     except Exception as ex:
         print("Unable to initialize the IoTConnect client. Error was:", ex)

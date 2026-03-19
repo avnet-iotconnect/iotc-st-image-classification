@@ -999,5 +999,5 @@ bolete
 ear
 toilet tissue
 development board
-stm32-mp135f-dk
-stm32-mp237f-ev1
+STM32MP135F-DK
+STM32MP237F-EV1

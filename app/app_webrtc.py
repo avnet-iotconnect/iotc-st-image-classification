@@ -15,6 +15,8 @@ from botocore.awsrequest import AWSRequest
 from botocore.credentials import Credentials
 from botocore.session import Session
 
+webrtc_client: 'KinesisVideoClient | None' = None
+
 
 class FrameQueueVideoTrack(MediaStreamTrack):
     kind = "video"
@@ -216,11 +218,32 @@ class KinesisVideoClient:
                             await self.handle_ice_candidate(payload, client_id)
             except websockets.ConnectionClosed:
                 print('Connection closed, reconnecting...')
+                self.get_signaling_channel_endpoint()
                 wss_url = self.create_wss_url()
                 continue
 
+    def refresh_credentials(self, access_key_id, secret_access_key, session_token):
+        """Set new session credentials. They take effect on the next reconnect."""
+        self.credentials = {
+            'accessKeyId': access_key_id,
+            'secretAccessKey': secret_access_key,
+            'sessionToken': session_token
+        }
+        self.kinesisvideo = boto3.client(
+            'kinesisvideo',
+            region_name=self.region,
+            aws_access_key_id=access_key_id,
+            aws_secret_access_key=secret_access_key,
+            aws_session_token=session_token
+        )
+        self.endpoints = None
+        self.endpoint_https = None
+        self.endpoint_wss = None
+        self.ice_servers = None
+
 
 def start_webrtc(region, channel_arn, access_key_id, secret_access_key, session_token, frame_queue):
+    global webrtc_client
     try:
         assert all([region, channel_arn, access_key_id, secret_access_key])
 
@@ -230,7 +253,7 @@ def start_webrtc(region, channel_arn, access_key_id, secret_access_key, session_
             'sessionToken': session_token
         }
 
-        client = KinesisVideoClient(
+        webrtc_client = KinesisVideoClient(
             client_id="MASTER",
             region=region,
             channel_arn=channel_arn,
@@ -238,7 +261,11 @@ def start_webrtc(region, channel_arn, access_key_id, secret_access_key, session_
             frame_queue=frame_queue
         )
 
-        asyncio.run(client.signaling_client())
+        asyncio.run(webrtc_client.signaling_client())
     except Exception:
         print("WebRTC thread crashed:")
         traceback.print_exc()
+
+
+
+
