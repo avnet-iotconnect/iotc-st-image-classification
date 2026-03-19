@@ -223,7 +223,6 @@ class KinesisVideoClient:
                 continue
 
     def refresh_credentials(self, access_key_id, secret_access_key, session_token):
-        """Set new session credentials. They take effect on the next reconnect."""
         self.credentials = {
             'accessKeyId': access_key_id,
             'secretAccessKey': secret_access_key,
@@ -236,10 +235,6 @@ class KinesisVideoClient:
             aws_secret_access_key=secret_access_key,
             aws_session_token=session_token
         )
-        self.endpoints = None
-        self.endpoint_https = None
-        self.endpoint_wss = None
-        self.ice_servers = None
 
 
 def start_webrtc(region, channel_arn, access_key_id, secret_access_key, session_token, frame_queue):

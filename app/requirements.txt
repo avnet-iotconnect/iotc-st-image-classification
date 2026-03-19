@@ -17,4 +17,4 @@ PyGObject
 # for button events
 evdev
 
-iotconnect-sdk-lite[aws-s3]
+iotconnect-sdk-lite[aws-s3]>=1.3.0

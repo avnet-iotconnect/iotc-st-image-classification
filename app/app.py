@@ -264,13 +264,13 @@ class CameraPipeline:
 
         return video_device_prev, camera_caps_prev, video_device_nn, camera_caps_nn, dcmipp_sensor, aux_postproc
 
-    def __init__(self, model, use_usb_camera=False, show_window=True, webrtc=True):
+    def __init__(self, model, use_usb_camera=False, show_window=True):
         self.model = model
         self.last_time = time.perf_counter()
         self.frame_count = 0
         self.show_window = show_window
         self.webrtc_queue = queue.Queue(maxsize=1)
-        self.webrtc = webrtc
+        self.webrtc_enabled = False # untils external code enables it
         self.pipelines = []
 
         # for whitebalance/gamma control for MIPI camera
@@ -424,7 +424,7 @@ class CameraPipeline:
             return Gst.FlowReturn.ERROR
 
         frame = np.ndarray(shape=(height, width, 3), dtype=np.uint8, buffer=map_info.data).copy()
-        if self.webrtc:
+        if self.webrtc_enabled:
             try:
                 self.webrtc_queue.put_nowait(frame)
             except queue.Full:
@@ -618,9 +618,9 @@ def on_video_streaming_event(kvsc: KvsClient):
         except Exception as e:
             print("Failed to refresh KVS credentials:", e)
 
+
 def on_disconnect(reason: str, disconnected_from_server: bool):
     print("Disconnected%s. Reason: %s" % (" from server" if disconnected_from_server else "", reason))
-
 
 
 def send_telemetry():
@@ -629,7 +629,7 @@ def send_telemetry():
         iotconnect_client.send_telemetry(asdict(stai_ic_telemetry))
 
 
-def iotconnect_client_init(channel_arn=None, webrtc_queue=None):
+def iotconnect_client_init(camera_pipeline: CameraPipeline):
     global iotconnect_client, s3_client
     device_config = DeviceConfig.from_iotc_device_config_json_file(
         device_config_json_path="iotcDeviceConfig.json",
@@ -659,25 +659,26 @@ def iotconnect_client_init(channel_arn=None, webrtc_queue=None):
     kvs_client = iotconnect_client.get_kvs_client()
     if kvs_client is None:
         print("KVS Client is not available. Make sure you enabled Video Support in your device template.")
+    elif kvs_client.get_signaling_channel_arn() is None:
+        print("ERROR: You must enable Video Streaming -> WebRTC in your device template.")
     else:
-
         creds=kvs_client.obtain_credentials()
         # Launch WebRTC streaming in a background thread (after camera pipeline is set up)
         # NOTE: For production or continuous streaming make a timer based expiry to invoke the refresh periodically
-        if channel_arn is not None:
-            from app_webrtc import start_webrtc
-            threading.Thread(
-                target=start_webrtc,
-                args=(
-                    "us-east-1",
-                    channel_arn,
-                    creds.access_key_id,
-                    creds.secret_access_key,
-                    creds.session_token,
-                    webrtc_queue
-                ),
-                daemon=True
-            ).start()
+        from app_webrtc import start_webrtc
+        threading.Thread(
+            target=start_webrtc,
+            args=(
+                "us-east-1", # we can possibly parse this from the arn...
+                kvs_client.get_signaling_channel_arn(),
+                creds.access_key_id,
+                creds.secret_access_key,
+                creds.session_token,
+                camera_pipeline.webrtc_queue
+            ),
+            daemon=True
+        ).start()
+        camera_pipeline.webrtc_enabled = True
 
 def iotconnect_application_loop():
     if iotconnect_client is not None:
@@ -697,17 +698,16 @@ def main():
     parser.add_argument('-t', '--reporting-interval', default=2, help='IoTConnect reporting interval in seconds')
     parser.add_argument('-u', '--usb', action='store_true', help='Try use USB camera (typically MJPG on /dev/video7).')
     parser.add_argument('-v', '--verbose', action='store_true', help='Enable verbose logging for inferencing etc.')
-    parser.add_argument('-c', '--channel-arn', default=None, help='KVS signaling channel ARN for WebRTC streaming.')
     args = parser.parse_args()
 
     verbose=args.verbose
     stai_inference = StAiInference(args.model_file)
-    camera = CameraPipeline(stai_inference, use_usb_camera=args.usb, show_window=True, webrtc=(args.channel_arn is not None))  # Set to False to disable window
+    camera_pipeline = CameraPipeline(stai_inference, use_usb_camera=args.usb, show_window=True)  # Set to False to disable window
 
     loop = GLib.MainLoop()
 
     try:
-        iotconnect_client_init(args.channel_arn, camera.webrtc_queue)
+        iotconnect_client_init(camera_pipeline)
         GLib.timeout_add(args.reporting_interval * 1000, iotconnect_application_loop)
     except Exception as ex:
         print("Unable to initialize the IoTConnect client. Error was:", ex)
@@ -717,7 +717,7 @@ def main():
     try:
         loop.run()
     except KeyboardInterrupt:
-        for p in camera.pipelines:
+        for p in camera_pipeline.pipelines:
             p.set_state(Gst.State.NULL)
 
 if __name__ == "__main__":
