@@ -14,7 +14,7 @@ This project contains the several demos:
   - Inferencing a camera feed on a MobileNet V2 model on the device with the STAI Python API.
   - Support for both USB and B-CAMS-IMX camera.
   - Reporting inference data to /IOTCONNECT.
-  - (WIP) AWS Kinesis Video Streams for video streaming to AWS.
+  - AWS Kinesis Video Streams for video streaming to AWS.
   - Uploading the camera images to /IOTCONNECT AWS S3 bucket for later analysis and fine-tuning of the model.
   - Receiving OTA updates of the model from /IOTCONNECT.
   - Pre-made models provided for reference and ease of use for evaluation:
@@ -175,14 +175,33 @@ you can simply run the app without the model argument.
 python3 app.py
 ```
 
-While running the application, you can send the "capture" C2D command to the device,
-which will upload the camera snapshot to the /IOTCONNECT AWS S3 bucket.
+### /IOTCONNECT File Upload With S3
 
-The same can be achieved b pressing either of the two user buttons on the board.
+To send the high resolution (Preview) image capture
+by either:
+- Pressing Button 1 or Button 2 on the board (black and white micro switches)
+- Sending "capture" C2D command to the device.
+
+This will upload the camera snapshot to the /IOTCONNECT AWS S3 bucket.
+
+The uploaded file will appear in the device's *Telemetry Files* section in the /IOTCONNECT Web UI.
+
+### Running WebRTC with /IOTCONNECT and AWS Kinesis Video Streams
+
+To monitor the actual input to the lower resolution (Neural Network)
+video stream that is being sent to the model for inference, you can
+use the WebRTC streaming support with /IOTCONNECT.
+
+Simply navigate to the Video Streaming section on the left side menu in the /IOTCONNECT Web UI,
+and click the *Start* button.
+
+> [!NOTE]
+> The choice ot send low resolution stream was made to cover both the preview and the neural network input stream.
+> The app can be modified to send the high resolution preview stream as well.
 
 # Pipeline Setup
 
-Quantization can run on either your PC or (WIP) AWS SageMaker.
+Quantization can run on either your PC or AWS SageMaker.
 
 It is recommended to use a Python Virtual Environment for this project. 
 The size of installed Python packages can ve quite large, so cleaning up after evaluation
