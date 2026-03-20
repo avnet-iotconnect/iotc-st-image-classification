@@ -161,7 +161,7 @@ def main():
         # No source_dir — avoids pipeline/requirements.txt being auto-installed
         # by the training toolkit (which would upgrade TF and break the container).
         # The container already ships tensorflow, numpy, and pillow.
-        dependencies=['../pipeline/st_optimization'],
+        dependencies=['requirements.txt', '../pipeline/st_optimization'],
         role=role,
         instance_count=1,
         instance_type='ml.m5.xlarge', # or 'ml.g4dn.xlarge'

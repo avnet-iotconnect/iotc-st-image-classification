@@ -141,7 +141,7 @@ scp iotcDeviceConfig.json  root@$device_ip:app/
 SSH to the device and execute the installer:
 ```bash
 cd ~/app
-./device-setup.sh <your connection *certificates.zip file>
+./device-setup.sh <your device *certificates.zip>
 ```
 
 The setup script will create a virtual environment with necessary packages installed at ```.venv-staiicdemo``` in user's home.
@@ -150,8 +150,7 @@ It will also download pre-quantized reference model from ST:
 * mobilenet_v2_1.0_224_int8_per_tensor.tflite: TFLite model.
 
 Pre-quantized and pre-fine-tuned models are provided as well:
-* mobilenetv2-optimized.nb and .tflite
-* mobilenetv2-finetuned.nb and .tflite
+* mobilenetv2-finetuned.nb and .tflite - fine-tuned to recognize various STM32 development boards
 
 The sample application is based on 
 [How to run inference using the STAI MPU Python API](https://wiki.stmicroelectronics.cn/stm32mpu/wiki/How_to_run_inference_using_the_STAI_MPU_Python_API)
@@ -215,8 +214,6 @@ Example:
 python3 -m venv ~/.demo-venv
 source ~/.demo-venv/bin/activate
 python3 -m pip install -r pipeline/requirements.txt
-# for OTA push, this has to ber manually installed on the local PC due to sagemaker compatibility:
-python3 -m pip install iotconnect-rest-api
 ```
 
 When done with the evaluation, simply deactivate the virtual environment and remove the directory.
@@ -226,7 +223,7 @@ When done with the evaluation, simply deactivate the virtual environment and rem
 
 The data/ directory will need to be set up for next steps, so execute the following command:
 ```bash
-pipeline/setup-data.sh
+pipeline/download-images.sh
 ````
 
 This process will take a while as the amount of data is quite large. Alternatively, if you do not need to train 
@@ -237,18 +234,21 @@ as [data/calibration.npz](data/calibration.npz)
 
 ## Running The Quantization Locally
 
-First, install the required packages
+You should install the [stedgeai](https://wiki.stmicroelectronics.cn/stm32mpu/wiki/ST_Edge_AI:_Guide_for_STM32MPU)
+tool so that we can convert your model to NBG (.nb) format.
+TFLite models can run as well, but will be slightly lower and will take longer to load.
 
-Get familiar with the application and options by obtaining help output from the quantize.py script:
+Get familiar with the pipeline application and their options by obtaining help output from the quantize.py script:
 ```bash
 cd pipeline/
 python3 quantize.py --help
+python3 train.py --help
 ```
 
 Crate a per-channel and a per-tensor model:
 ```bash
 python3 quantize.py # default is per-tensor quantization and file name mobilenetv2-optimized.tflite
-python3 quantize.py --output-model=mobilenetv2-optimized.tflite --per-channel
+python3 quantize.py --output-model=mobilenetv2-optimized-pc.tflite --per-channel
 # generate NBG models:
 ./stedgeai-convert.sh mobilenetv2-optimized
 ./stedgeai-convert.sh mobilenetv2-optimized-pc
@@ -259,10 +259,13 @@ python3 quantize.py --output-model=mobilenetv2-optimized.tflite --per-channel
 > but will be slightly more accurate.
 > It is recommended to use the per-tensor quantized models.
 
-Three files will be created in the [models/](models) directory:
+Three models will be written in the [models/](models) directory:
 * mobilenetv2-optimized.tflite: Per-tensor quantized model.
 * mobilenetv2-optimized-pc.tflite: Per-channel quantized model.
 * base_model.keras: The input model will be saved for reference.
+
+Additionally, the two TFLite models will be converted to NBG format
+if you ran the stedgeai-convert.sh script.
 
 # Fine-Tuning a Model Training
 
@@ -274,12 +277,13 @@ python3 train.py # by default, this will save to models/mobilenetv2-finetuned.ke
 python3 quantize.py --input-model=mobilenetv2-finetuned.keras --output-model=mobilenetv2-finetuned.tflite
 ./stedgeai-convert.sh mobilenetv2-finetuned # see below section for more details
 ```
-Then upload the new model to the device. 
+
+When done, upload the new model to the device. 
 
 
 # NBG and ONNX Model Support
 
-You can install the [stedgeai](https://wiki.stmicroelectronics.cn/stm32mpu/wiki/ST_Edge_AI:_Guide_for_STM32MPU)
+You should install the [stedgeai](https://wiki.stmicroelectronics.cn/stm32mpu/wiki/ST_Edge_AI:_Guide_for_STM32MPU)
 tool and convert your model to NBG (.nb) format.
 
 > [!IMPORTANT]
@@ -330,7 +334,7 @@ Example with environment variables set up:
 ```bash
 python3 quantize.py --send-to=my-device-id
 # or from sagemaker/ directory (see AWS SageMaker setup below):
-python3 sagemaker-run.py --send-to=my-device-id
+python3 sm-quantize.py --send-to=my-device-id
 ```
 
 

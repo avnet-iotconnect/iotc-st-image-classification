@@ -288,7 +288,7 @@ def main():
     parser.add_argument('--model-dir', type=str,
                         default=os.environ.get('SM_MODEL_DIR') if os.environ.get('SM_MODEL_DIR') is not None else '../models',
                         help="Location where the models will be written or read. Default: '../models'")
-    parser.add_argument('--output-model', type=str, default='mobilenetv2-sm-finetuned.keras',
+    parser.add_argument('--output-model', type=str, default='mobilenetv2-finetuned.keras',
                         help="File name to be written for the output model")
 
     args, _ = parser.parse_known_args()
