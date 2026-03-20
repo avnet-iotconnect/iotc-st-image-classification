@@ -226,43 +226,126 @@ class StAiInference:
             stai_ic_telemetry.confidence2 = float(round(results[top_k[1]] * 100, 2))
 
 class CameraPipeline:
-    @staticmethod
-    def setup_camera(width=760, height=568, framerate=30):
+
+    def _build_libcamera_pipeline(self):
         """
-        Call ST's setup_camera.sh to configure the media pipeline.
-        Returns (video_device_prev, camera_caps_prev, video_device_nn, camera_caps_nn, dcmipp_sensor, aux_postproc) tuple.
+        Build a single GStreamer pipeline using libcamerasrc with dual output pads
+        for the MIPI CSI camera (e.g. imx335 on STM32MP257F-DK).
+        Mirrors ST's camera_dual_pipeline_creation() approach from stai_mpu_image_classification.py.
+
+        Pipeline topology (hardware-split, NOT a software tee):
+
+                          | src   (view-finder)   -> videorate -> queue [760x568 RGB16 30fps] -> tee -> videoconvert -> appsink(preview_sink) [RGB]
+          libcamerasrc    |                                                                          -> videoconvert -> textoverlay -> autovideosink
+                          | src_0 (still-capture)  -> videorate -> queue [224x224 RGB 30fps]  -> appsink(nn_sink)
+
+        NOTE: nn_input_width must be a multiple of 16, otherwise the DCMIPP pixelpacker
+        adds stride padding that on_nn_frame would need to handle (see ST's preprocess_buffer).
         """
-        config_camera = f"/usr/local/x-linux-ai/resources/setup_camera.sh {width} {height} {framerate} 224 224"
-        x = subprocess.check_output(config_camera, shell=True)
-        x = x.decode("utf-8")
-        print(x)
+        pipeline = Gst.Pipeline.new("mipi-dual-pipeline")
 
-        video_device_prev = None
-        camera_caps_prev = None
-        video_device_nn = None
-        camera_caps_nn = None
-        dcmipp_sensor = None
-        aux_postproc = None
+        # --- Source ---
+        cam = Gst.ElementFactory.make("libcamerasrc", "cam")
+        if not cam:
+            raise RuntimeError("Failed to create libcamerasrc element. Is the gstreamer libcamera plugin installed?")
 
-        for line in x.split("\n"):
-            # Use startswith() to match only definition lines (not debug output)
-            # Iterate all lines so the last (final) value wins
-            if line.startswith("V4L_DEVICE_PREV="):
-                video_device_prev = line.split('=', 1)[1]
-            if line.startswith("V4L2_CAPS_PREV="):
-                # Remove spaces - GStreamer caps syntax requires no spaces after commas
-                camera_caps_prev = line.split('=', 1)[1].replace(" ", "")
-            if line.startswith("V4L_DEVICE_NN="):
-                video_device_nn = line.split('=', 1)[1]
-            if line.startswith("V4L2_CAPS_NN="):
-                # Remove spaces - GStreamer caps syntax requires no spaces after commas
-                camera_caps_nn = line.split('=', 1)[1].replace(" ", "")
-            if line.startswith("DCMIPP_SENSOR="):
-                dcmipp_sensor = line.split('=', 1)[1]
-            if line.startswith("AUX_POSTPROC="):
-                aux_postproc = line.split('=', 1)[1]
+        # --- Caps ---
+        preview_caps = Gst.Caps.from_string(
+            "video/x-raw,width=760,height=568,format=RGB16,framerate=30/1"
+        )
+        nn_caps = Gst.Caps.from_string(
+            "video/x-raw,width=224,height=224,format=RGB,framerate=30/1"
+        )
+        print(f"Main pipe configuration: {preview_caps.to_string()}")
+        print(f"Aux pipe configuration:  {nn_caps.to_string()}")
 
-        return video_device_prev, camera_caps_prev, video_device_nn, camera_caps_nn, dcmipp_sensor, aux_postproc
+        # --- Preview / display branch (from cam.src, view-finder) ---
+        videorate_prev = Gst.ElementFactory.make("videorate", "videorate_prev")
+        queue_prev = Gst.ElementFactory.make("queue", "queue_prev")
+        queue_prev.set_property("max-size-buffers", 1)
+        queue_prev.set_property("leaky", 2)
+
+        tee = Gst.ElementFactory.make("tee", "tee_prev")
+
+        # Preview appsink sub-branch (for WebRTC / S3 capture)
+        queue_app = Gst.ElementFactory.make("queue", "queue_app")
+        queue_app.set_property("max-size-buffers", 1)
+        queue_app.set_property("leaky", 2)
+        videoconvert_app = Gst.ElementFactory.make("videoconvert", "videoconvert_app")
+        preview_sink = Gst.ElementFactory.make("appsink", "preview_sink")
+        preview_sink.set_property("emit-signals", True)
+        preview_sink.set_property("sync", False)
+        preview_sink.set_property("max-buffers", 1)
+        preview_sink.set_property("drop", True)
+        preview_sink.set_property("caps", Gst.Caps.from_string("video/x-raw,format=RGB"))
+
+        elements = [cam, videorate_prev, queue_prev, tee,
+                     queue_app, videoconvert_app, preview_sink]
+
+        # Display sub-branch (optional)
+        if self.show_window:
+            queue_disp = Gst.ElementFactory.make("queue", "queue_disp")
+            queue_disp.set_property("max-size-buffers", 1)
+            queue_disp.set_property("leaky", 2)
+            videoconvert_disp = Gst.ElementFactory.make("videoconvert", "videoconvert_disp")
+            overlay_el = Gst.ElementFactory.make("textoverlay", "overlay")
+            overlay_el.set_property("text", "Camera Stream")
+            overlay_el.set_property("valignment", 2)    # top
+            overlay_el.set_property("halignment", 0)    # left
+            overlay_el.set_property("font-desc", "Sans, 24")
+            overlay_el.set_property("shaded-background", True)
+            display_sink = Gst.ElementFactory.make("autovideosink", "display_sink")
+            display_sink.set_property("sync", False)
+            elements += [queue_disp, videoconvert_disp, overlay_el, display_sink]
+
+        # --- NN branch (from cam.src_0, still-capture) ---
+        videorate_nn = Gst.ElementFactory.make("videorate", "videorate_nn")
+        queue_nn = Gst.ElementFactory.make("queue", "queue_nn")
+        queue_nn.set_property("max-size-buffers", 1)
+        queue_nn.set_property("leaky", 2)
+        nn_sink = Gst.ElementFactory.make("appsink", "nn_sink")
+        nn_sink.set_property("emit-signals", True)
+        nn_sink.set_property("sync", False)
+        nn_sink.set_property("max-buffers", 1)
+        nn_sink.set_property("drop", True)
+
+        elements += [videorate_nn, queue_nn, nn_sink]
+
+        # Add all elements to the pipeline
+        for el in elements:
+            pipeline.add(el)
+
+        # --- Link preview / display branch ---
+        # cam.src -> videorate_prev -> queue_prev [preview_caps] -> tee
+        cam.link(videorate_prev)
+        videorate_prev.link(queue_prev)
+        queue_prev.link_filtered(tee, preview_caps)
+        # tee -> queue_app -> videoconvert_app -> preview_sink [RGB]
+        tee.link(queue_app)
+        queue_app.link(videoconvert_app)
+        videoconvert_app.link(preview_sink)
+
+        if self.show_window:
+            # tee -> queue_disp -> videoconvert_disp -> overlay -> display_sink
+            tee.link(queue_disp)
+            queue_disp.link(videoconvert_disp)
+            videoconvert_disp.link(overlay_el)
+            overlay_el.link(display_sink)
+
+        # --- Link NN branch ---
+        # Request second output pad from libcamerasrc for the NN stream
+        src_request_template = cam.get_pad_template("src_%u")
+        src_0 = cam.request_pad(src_request_template, None, None)
+        src_0.link(videorate_nn.get_static_pad("sink"))
+        videorate_nn.link(queue_nn)
+        queue_nn.link_filtered(nn_sink, nn_caps)
+
+        # --- Set stream roles on the libcamerasrc pads ---
+        src_pad = cam.get_static_pad("src")
+        src_pad.set_property("stream-role", 3)   # view-finder (continuous preview)
+        src_0.set_property("stream-role", 1)     # still-capture (NN input)
+
+        return pipeline
 
     def __init__(self, model, use_usb_camera=False, show_window=True):
         self.model = model
@@ -293,7 +376,7 @@ class CameraPipeline:
 
         if use_usb_camera:
             # USB: single device, tee into inference + preview/display branches
-            src = "v4l2src device=/dev/video7 io-mode=4 ! image/jpeg,width=640,height=480,framerate=30/1 ! jpegdec ! videoconvert"
+            src = "v4l2src device=/dev/video6 io-mode=4 ! image/jpeg,width=640,height=480,framerate=30/1 ! jpegdec ! videoconvert"
             nn_branch = "queue ! videoconvert ! videoscale ! video/x-raw,format=RGB,width=224,height=224 ! appsink name=nn_sink emit-signals=True sync=false drop=true"
             preview_branch = "queue ! videoconvert ! video/x-raw,format=RGB ! appsink name=preview_sink emit-signals=True sync=false drop=true"
             if show_window:
@@ -304,34 +387,11 @@ class CameraPipeline:
             self.pipeline_preview = Gst.parse_launch(pipeline_str)
             self.pipeline_nn = self.pipeline_preview  # same pipeline
         else:
-            # MIPI: two separate V4L2 devices from setup_camera.sh
-            prev_device, prev_caps, nn_device, nn_caps, dcmipp_sensor, aux_postproc = CameraPipeline.setup_camera(width=760, height=568, framerate=30)
-            self.aux_postproc = aux_postproc
-            self.dcmipp_sensor = dcmipp_sensor
-            print(f"MIPI preview: device=/dev/{prev_device}, caps={prev_caps}")
-            print(f"MIPI NN:      device=/dev/{nn_device}, caps={nn_caps}")
-
-            # NN pipeline: dedicated device, direct to appsink
-            self.pipeline_nn = Gst.parse_launch(
-                f"v4l2src device=/dev/{nn_device} ! {nn_caps} ! "
-                "queue max-size-buffers=1 leaky=2 ! "
-                "appsink name=nn_sink emit-signals=True sync=false drop=true"
-            )
-
-            # Preview pipeline: display + WebRTC
-            preview_branch = "queue ! videoconvert ! video/x-raw,format=RGB ! appsink name=preview_sink emit-signals=True sync=false drop=true"
-            if show_window:
-                display_branch = f"queue ! {text_overlay} ! videoconvert ! autovideosink sync=false"
-                self.pipeline_preview = Gst.parse_launch(
-                    f"v4l2src device=/dev/{prev_device} ! {prev_caps} ! "
-                    f"tee name=t ! {preview_branch} "
-                    f"t. ! {display_branch}"
-                )
-            else:
-                self.pipeline_preview = Gst.parse_launch(
-                    f"v4l2src device=/dev/{prev_device} ! {prev_caps} ! "
-                    f"{preview_branch}"
-                )
+            # MIPI: single libcamerasrc with two hardware output pads (view-finder + still-capture).
+            # This matches ST's updated pipeline approach — no setup_camera.sh needed.
+            # ISP gamma/white-balance config is not used with libcamerasrc (ST dropped it too).
+            self.pipeline_preview = self._build_libcamera_pipeline()
+            self.pipeline_nn = self.pipeline_preview  # same pipeline object
 
         # Connect appsinks
         self.pipeline_preview.get_by_name("preview_sink").connect("new-sample", self.on_preview_frame)
@@ -698,7 +758,7 @@ def main():
     parser = ArgumentParser()
     parser.add_argument('-m', '--model-file', default=None, help='model to be executed.')
     parser.add_argument('-t', '--reporting-interval', default=2, help='IoTConnect reporting interval in seconds')
-    parser.add_argument('-u', '--usb', action='store_true', help='Try use USB camera (typically MJPG on /dev/video7).')
+    parser.add_argument('-u', '--usb', action='store_true', help='Try use USB camera (typically MJPG on /dev/video6).')
     parser.add_argument('-v', '--verbose', action='store_true', help='Enable verbose logging for inferencing etc.')
     args = parser.parse_args()
 

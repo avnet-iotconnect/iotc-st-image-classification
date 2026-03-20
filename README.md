@@ -38,7 +38,7 @@ This project contains the several demos:
 
 To run the demo:
 - An STM32-MP257F-DK
-- OpenSTLinux image version 6.0.0 (5.0.3-openstlinux-6.6-yocto-scarthgap-mpu-v24.11.0)
+- OpenSTLinux Starter Package A35-TD flavor 6.2.0 (6.6-yocto-scarthgap-mpu-v26.02.18)
 - Display connected to the device via HDMI or LVDS.
 - A CAMS-IMX MIPI CSI-2 camera connected to the device or a USB camera.
 
@@ -70,7 +70,7 @@ Follow the ST Instructions to flash the OpenSTLinux Starter Package image to you
 
 The instructions provided in this document are tested with the StarterPackage version 6.2.0.
 Keep in mind that once the package is downloaded, the actual version may differ. For example:
-```5.0.3-openstlinux-6.6-yocto-scarthgap-mpu-v24.11.06``` was tested with STM32MP257-DK.
+```6.6-yocto-scarthgap-mpu-v26.02.18``` was tested with STM32MP257-DK.
 
 The overall process with STM32CubeProgrammer is fairly complex and can be lengthy. 
 As an advanced but faster alternative, we suggest to explore the option of downloading the starter package, 
@@ -373,14 +373,14 @@ Ensure to restart the board after plugging in the camera to ensure proper order
 of camera devices provided by the kernel.
 
 You should verify that your camera appears as /dev/video7. For example:
-``bash
+```bash
 v4l2-ctl --list-devices
 ....
-HD Pro Webcam C920 (usb-482f0000.usb-1.2):
+HD Pro Webcam C920 (usb-482f0000.usb-1.1):
+	/dev/video6
 	/dev/video7
-	/dev/video8
-	/dev/media3
-``
+	/dev/media2
+````
 
 Otherwise, the application may need to be modified to select the appropriate device.
 
