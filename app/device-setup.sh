@@ -31,6 +31,5 @@ mv cert_*.crt device-cert.pem
 mv pk_*.pem device-pkey.pem
 
 echo "----------------------------------------------"
-echo "Execute the app with :"
-echo "source ~/.venv-staiicdemo/bin/activate"
-echo "python3 app.py -m mobilenet_v2_1.0_224_int8_per_tensor.nb"
+echo "Execute the app with ST's reference model:"
+echo "./app.sh -m mobilenet_v2_1.0_224_int8_per_tensor.nb"

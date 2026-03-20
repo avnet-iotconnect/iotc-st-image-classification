@@ -452,6 +452,8 @@ class CameraPipeline:
         print(f"GStreamer Error: {err}")
         if debug:
             print(f"Debug info: {debug}")
+        if "Resource not found" in err:
+            sys.exit("Critical error! Re-running the app after cold boot should fix this problem. Please start the application again.")
 
     def on_warning(self, bus, msg):
         warn, debug = msg.parse_warning()

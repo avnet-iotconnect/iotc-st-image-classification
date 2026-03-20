@@ -61,10 +61,14 @@ for armv7l (vs. the aarch64 for MP2). Therefore, MP1 support is not included in 
 
 ## Image Flashing
 
+Download the OpenSTLinux STM32MP2 OpenSTLinux Starter Package for A35-TD flavor (MP2-START-A35-TD), version 6.2.0 from
+[https://wiki.st.com/stm32mpu/wiki/Category:OpenSTLinux_st](https://www.st.com/en/embedded-software/stm32mp2starter.html)
+
 Follow the ST Instructions to flash the OpenSTLinux Starter Package image to your device at 
 [https://wiki.st.com/stm32mpu/wiki/Category:OpenSTLinux_starter_packages](https://wiki.st.com/stm32mpu/wiki/Category:OpenSTLinux_starter_packages)
+(Click "STM32MP25 Discovery kits - Starter Package" on the left side menu)
 
-The instructions provided in this document are tested with the StarterPackage version 6.0.0.
+The instructions provided in this document are tested with the StarterPackage version 6.2.0.
 Keep in mind that once the package is downloaded, the actual version may differ. For example:
 ```5.0.3-openstlinux-6.6-yocto-scarthgap-mpu-v24.11.06``` was tested with STM32MP257-DK.
 
@@ -137,7 +141,7 @@ scp iotcDeviceConfig.json  root@$device_ip:app/
 SSH to the device and execute the installer:
 ```bash
 cd ~/app
-./device-setup.sh
+./device-setup.sh <your connection *certificates.zip file>
 ```
 
 The setup script will create a virtual environment with necessary packages installed at ```.venv-staiicdemo``` in user's home.
