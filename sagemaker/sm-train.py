@@ -59,7 +59,7 @@ def parse_hyperparameters_and_args():
                         default=os.environ.get('SM_MODEL_DIR') if os.environ.get('SM_MODEL_DIR') is not None else '../models',
                         help="Local directory where the output model will be downloaded to. Default: '../models'")
 
-    parser.add_argument('--output-model', type=str, default='mobilenetv2-sm-finetuned.keras',
+    parser.add_argument('--output-model', type=str, default='mobilenetv2-finetuned-sm.keras',
                         help="File name to be written for the output model")
 
     args, _ = parser.parse_known_args()

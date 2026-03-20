@@ -333,8 +333,6 @@ command line arguments that can be obtained when running the tool with --help:
 Example with environment variables set up:
 ```bash
 python3 quantize.py --send-to=my-device-id
-# or from sagemaker/ directory (see AWS SageMaker setup below):
-python3 sm-quantize.py --send-to=my-device-id
 ```
 
 
@@ -373,7 +371,7 @@ An example running the full pipeline on SageMaker:
 cd sagemaker/
 source ~/.demo-venv/bin/activate # form the previously created virtual environment
 pip install -r requirements.txt
-bash setup-bucket-data.sh
+./setup-bucket-data.sh
 python3 sm-train.py # default --output-model=mobilenetv2-finetuned-sm.keras
 python3 sm-quantize.py --input-model=mobilenetv2-finetuned-sm.keras --output-model=mobilenetv2-finetuned-sm.tflite
 ```

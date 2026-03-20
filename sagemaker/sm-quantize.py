@@ -13,7 +13,6 @@ bucket = sagemaker_session.default_bucket() # Or your specific bucket
 s3_data_path = f's3://{bucket}/data/calibration.npz'
 s3_output_path = f's3://{bucket}/output/'
 
-
 def iotc_ota_send(args, file_path):
     """
     This function will send an OTA to the device with specified duid
@@ -105,24 +104,9 @@ def parse_hyperparameters_and_args():
     # parser.add_argument('--train-data-dir', type=str, default=os.environ.get('SM_CHANNEL_TRAINING') if os.environ.get('SM_CHANNEL_TRAINING') is not None else '../data')
 
     parser.add_argument('--model-dir', type=str, default=os.environ.get('SM_MODEL_DIR') if os.environ.get('SM_MODEL_DIR') is not None else '../models')
-
-    parser.add_argument('--base-model', type=str, default=None)
     parser.add_argument('--input-model', type=str, default=None)
-    parser.add_argument('--output-model', type=str, default="mobilenetv2-sm-optimized.tflite")
+    parser.add_argument('--output-model', type=str, default="mobilenetv2-optimized-sm.tflite")
     parser.add_argument('--per-channel', action="store_true", default=False)
-
-    # IoTConnect OTA and user config:
-    parser.add_argument('--send-to', type=str, default=None)
-    parser.add_argument('--iotc-username', type=str, default=os.environ.get('IOTC_USER'),
-                        help="Your account username (email). IOTC_USER environment variable can be used instead.")
-    parser.add_argument('--iotc-password', type=str, default=os.environ.get('IOTC_PASS'),
-                        help="Your account password. IOTC_PASS environment variable can be used instead.")
-    parser.add_argument('--iotc-platform', type=str, default=os.environ.get('IOTC_PF'),
-                        help='Account platform ("aws" for AWS, or "az" for Azure). IOTC_PF environment variable can be used instead.')
-    parser.add_argument('--iotc-env', type=str, default=os.environ.get('IOTC_ENV'),
-                        help='Account environment - From settings -> Key Vault in the Web UI. IOTC_ENV environment variable can be used instead.'),
-    parser.add_argument('--iotc-skey', type=str, default=os.environ.get('IOTC_SKEY'),
-                        help="Your solution key. IOTC_SKEY environment variable can be used instead."),
 
     args, _ = parser.parse_known_args()
 
@@ -141,13 +125,6 @@ def parse_hyperparameters_and_args():
         hyperparameters['per-channel'] = ""
     else:
         del hyperparameters['per-channel']
-
-    # not supported directly from sagemaker because it does not support python 3.11 (minimum for our rest API)
-    if hyperparameters.get('send-to') is not None:
-        del hyperparameters['send-to']
-
-    # remove all IoTConnect related parameters as well
-    hyperparameters = {key: value for key, value in hyperparameters.items() if not key.startswith('iotc-')}
 
     return hyperparameters, args
 
