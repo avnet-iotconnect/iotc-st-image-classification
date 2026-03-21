@@ -333,6 +333,8 @@ command line arguments that can be obtained when running the tool with --help:
 Example with environment variables set up:
 ```bash
 python3 quantize.py --send-to=my-device-id
+# or from sagemaker/ directory (see AWS SageMaker setup below):
+python3 sagemaker-run.py --send-to=my-device-id
 ```
 
 

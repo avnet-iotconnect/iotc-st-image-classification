@@ -98,8 +98,12 @@ def quantize(args):
         input_model = default_model
         input_model.save(os.path.join(args.model_dir, "base_model.keras"))
     else:
-        print(f"Using {args.input_model}")
-        input_model = tf.keras.models.load_model(os.path.join(args.model_dir, args.input_model))
+        if args.input_dir is not None:
+            print(f"Using {args.input_dir}")
+            input_model = tf.keras.models.load_model(os.path.join(args.input_dir, args.input_model))
+        else:
+            print(f"Using {args.input_model}")
+            input_model = tf.keras.models.load_model(os.path.join(args.model_dir, args.input_model))
 
     calibration_data_file = os.path.join(args.train_data_dir, 'calibration.npz')
 
@@ -137,9 +141,10 @@ def main():
                         help="Location of calibration and other data. Default: ../data'")
     parser.add_argument('--model-dir', type=str, default=os.environ.get('SM_MODEL_DIR') if os.environ.get('SM_MODEL_DIR') is not None else '../models',
                         help="Location where the models will be written or read. Default: '../models'")
-
     parser.add_argument('--input-model', type=str, default=None,
                         help="Optional model file from model-dir to load into the application. By default a model will be instantiated with Keras")
+    parser.add_argument('--input-dir', type=str, default=os.environ.get('SM_CHANNEL_MODEL') if os.environ.get('SM_CHANNEL_MODEL') is not None else None,
+                        help="Use this instead of input-model to split input and output(model-dir) directories")
     parser.add_argument('--output-model', type=str, default="mobilenetv2-optimized.tflite",
                         help="File name to be written for the output model")
     parser.add_argument('--per-channel', action="store_true", default=False,

@@ -10,8 +10,6 @@ sagemaker_session = sagemaker.Session()
 
 
 bucket = sagemaker_session.default_bucket() # Or your specific bucket
-s3_data_path = f's3://{bucket}/data/calibration.npz'
-s3_output_path = f's3://{bucket}/output/'
 
 def iotc_ota_send(args, file_path):
     """
@@ -108,6 +106,19 @@ def parse_hyperparameters_and_args():
     parser.add_argument('--output-model', type=str, default="mobilenetv2-optimized-sm.tflite")
     parser.add_argument('--per-channel', action="store_true", default=False)
 
+    # IoTConnect OTA and user config:
+    parser.add_argument('--send-to', type=str, default=None)
+    parser.add_argument('--iotc-username', type=str, default=os.environ.get('IOTC_USER'),
+                        help="Your account username (email). IOTC_USER environment variable can be used instead.")
+    parser.add_argument('--iotc-password', type=str, default=os.environ.get('IOTC_PASS'),
+                        help="Your account password. IOTC_PASS environment variable can be used instead.")
+    parser.add_argument('--iotc-platform', type=str, default=os.environ.get('IOTC_PF'),
+                        help='Account platform ("aws" for AWS, or "az" for Azure). IOTC_PF environment variable can be used instead.')
+    parser.add_argument('--iotc-env', type=str, default=os.environ.get('IOTC_ENV'),
+                        help='Account environment - From settings -> Key Vault in the Web UI. IOTC_ENV environment variable can be used instead.'),
+    parser.add_argument('--iotc-skey', type=str, default=os.environ.get('IOTC_SKEY'),
+                        help="Your solution key. IOTC_SKEY environment variable can be used instead."),
+
     args, _ = parser.parse_known_args()
 
     hyperparameters = {}
@@ -126,6 +137,13 @@ def parse_hyperparameters_and_args():
     else:
         del hyperparameters['per-channel']
 
+    # not supported directly from sagemaker because it does not support python 3.11 (minimum for our rest API)
+    if hyperparameters.get('send-to') is not None:
+        del hyperparameters['send-to']
+
+    # remove all IoTConnect related parameters as well
+    hyperparameters = {key: value for key, value in hyperparameters.items() if not key.startswith('iotc-')}
+
     return hyperparameters, args
 
 def main():
@@ -133,12 +151,35 @@ def main():
     role = get_sagemaker_execution_role_arn_by_pattern()
 
     hyperparameters, args = parse_hyperparameters_and_args()
+
+    # When an input model is provided, upload it to S3 and deliver it via a
+    # 'model' input channel.  We point the estimator's model_dir at that
+    # channel path so SM_MODEL_DIR inside the container equals the channel dir.
+    # quantize.py then reads the input model and writes the output tflite to
+    # the same directory — and SageMaker tars it all up at the end.
+    s3_data_path = f's3://{bucket}/data/calibration.npz'
+    s3_output_path = f's3://{bucket}/output/'
+
+    inputs = {
+        'training': sagemaker.TrainingInput(s3_data_path, distribution='FullyReplicated')
+    }
+
+    if args.input_model is not None:
+        local_model_path = str(os.path.join(args.model_dir, args.input_model))
+        if not os.path.isfile(local_model_path):
+            raise FileNotFoundError(f"Input model not found: {local_model_path}")
+        s3_model_key = f'models/{args.input_model}'
+        s3_model_path = f's3://{bucket}/{s3_model_key}'
+        print(f"Uploading {local_model_path} -> {s3_model_path}")
+        boto3.client('s3').upload_file(local_model_path, bucket, s3_model_key)
+        inputs['model'] = sagemaker.TrainingInput(s3_model_path, distribution='FullyReplicated')
+
     estimator = TensorFlow(
         entry_point='../pipeline/quantize.py',
         # No source_dir — avoids pipeline/requirements.txt being auto-installed
         # by the training toolkit (which would upgrade TF and break the container).
         # The container already ships tensorflow, numpy, and pillow.
-        dependencies=['requirements.txt', '../pipeline/st_optimization'],
+        dependencies=['../pipeline/st_optimization'],
         role=role,
         instance_count=1,
         instance_type='ml.m5.xlarge', # or 'ml.g4dn.xlarge'
@@ -148,11 +189,6 @@ def main():
         output_path=s3_output_path, # Where the trained model will be saved
         model_dir='/opt/ml/model'  # We want to save the model locally and some other stuff
     )
-
-    inputs = {
-        'training': sagemaker.TrainingInput(s3_data_path, distribution='FullyReplicated',
-                                            content_type='application/tar+gzip')
-    }
 
     estimator.fit(inputs)
     print(f"Trained model saved to: {estimator.model_data}")
