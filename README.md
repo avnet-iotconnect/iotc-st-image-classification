@@ -7,7 +7,7 @@ and uploaded to a device with IoTConnect OTA with an application that can read i
 from a MIPI CSI-2 or a USB camera and perform image classification inference on the device
 with a Mobilenet V2 model.
 
-# Project Features
+### Project Features
 
 This project contains the several demos:
 - The application running on the device with:
