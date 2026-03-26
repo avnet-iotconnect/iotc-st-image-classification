@@ -47,7 +47,7 @@ Development system requirements:
 - To be able to create NBG models on your development system, install [STE AI Core 2.2.0]https://www.st.com/en/development-tools/stedgeai-core.html
 - To evaluate SageMaker and WebRTC with AWS, you will need to set up an AWS account and configure AWS CLI on your system.
 
-#### Device Support
+### Device Support
 
 This project supports STM32MP257f-dk by default. To support other MP2 devices, 
 a minor modification to the ```stedgeai-convert.sh``` script would be needed
