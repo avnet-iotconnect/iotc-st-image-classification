@@ -187,6 +187,10 @@ The uploaded file will appear in the device's *Telemetry Files* section in the /
 
 ### Running WebRTC with /IOTCONNECT and AWS Kinesis Video Streams
 
+The WebRTC streaming support is based on AWS's 
+[python-samples-for-amazon-kinesis-video-streams-with-webrtc](https://github.com/aws-samples/python-samples-for-amazon-kinesis-video-streams-with-webrtc)
+python kvsWebRTCClientMaster.py example.
+
 To monitor the actual input to the lower resolution (Neural Network)
 video stream that is being sent to the model for inference, you can
 use the WebRTC streaming support with /IOTCONNECT.
